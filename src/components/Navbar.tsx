@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 /**
  * Barre de navigation principale du site
- * Affiche les liens vers toutes les pages principales
+ * Design moderne avec dégradé bleu/violet foncé
  */
 
 export default function Navbar() {
@@ -20,17 +20,17 @@ export default function Navbar() {
     return pathname.startsWith(path);
   };
 
-  // Lien de navigation
+  // Lien de navigation avec design amélioré
   const NavLink = ({ href, children }: { href: string; children: React.ReactNode }) => {
     const active = isActive(href);
     
     return (
       <Link
         href={href}
-        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors
+        className={`px-4 py-2 rounded-md text-sm font-medium transition-all
           ${active
-            ? 'bg-blue-100 text-blue-700'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            ? 'text-yellow-300 border-b-2 border-yellow-300'
+            : 'text-white/80 hover:text-white hover:bg-white/10'
           }`}
       >
         {children}
@@ -39,18 +39,18 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <nav className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] sticky top-0 z-50 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo / Titre */}
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-2xl font-bold text-white">
               Deutsch Lernen
             </span>
           </Link>
 
           {/* Liens de navigation - Desktop */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-2">
             <NavLink href="/">Dashboard</NavLink>
             <NavLink href="/lecons">Leçons</NavLink>
             <NavLink href="/exercices">Exercices</NavLink>
@@ -73,6 +73,7 @@ export default function Navbar() {
 
 function MobileMenu() {
   const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
 
   const toggleMenu = () => setIsOpen(!isOpen);
 
@@ -81,7 +82,7 @@ function MobileMenu() {
       {/* Bouton hamburger */}
       <button
         onClick={toggleMenu}
-        className="p-2 rounded-md text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+        className="p-2 rounded-md text-white/80 hover:text-white hover:bg-white/10"
         aria-label="Ouvrir le menu"
       >
         <svg
@@ -101,37 +102,44 @@ function MobileMenu() {
 
       {/* Menu déroulant */}
       {isOpen && (
-        <div className="absolute top-16 right-4 left-4 bg-white border border-gray-200 rounded-md shadow-lg py-2 z-50">
-          <Link
-            href="/"
-            onClick={() => setIsOpen(false)}
-            className="block px-4 py-2 text-gray-600 hover:bg-gray-100"
-          >
+        <div className="absolute top-16 right-4 left-4 bg-[#1e1b4b] border border-white/20 rounded-xl shadow-lg py-2 z-50">
+          <MobileNavLink href="/" pathname={pathname} onClick={() => setIsOpen(false)}>
             Dashboard
-          </Link>
-          <Link
-            href="/lecons"
-            onClick={() => setIsOpen(false)}
-            className="block px-4 py-2 text-gray-600 hover:bg-gray-100"
-          >
+          </MobileNavLink>
+          <MobileNavLink href="/lecons" pathname={pathname} onClick={() => setIsOpen(false)}>
             Leçons
-          </Link>
-          <Link
-            href="/exercices"
-            onClick={() => setIsOpen(false)}
-            className="block px-4 py-2 text-gray-600 hover:bg-gray-100"
-          >
+          </MobileNavLink>
+          <MobileNavLink href="/exercices" pathname={pathname} onClick={() => setIsOpen(false)}>
             Exercices
-          </Link>
-          <Link
-            href="/evaluation"
-            onClick={() => setIsOpen(false)}
-            className="block px-4 py-2 text-gray-600 hover:bg-gray-100"
-          >
+          </MobileNavLink>
+          <MobileNavLink href="/evaluation" pathname={pathname} onClick={() => setIsOpen(false)}>
             Évaluation
-          </Link>
+          </MobileNavLink>
         </div>
       )}
     </>
+  );
+}
+
+function MobileNavLink({ href, pathname, onClick, children }: {
+  href: string;
+  pathname: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const active = pathname === href || pathname.startsWith(href + '/');
+  
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`block px-4 py-2 text-sm font-medium transition-colors
+        ${active
+          ? 'text-yellow-300 bg-white/10'
+          : 'text-white/80 hover:text-white hover:bg-white/10'
+        }`}
+    >
+      {children}
+    </Link>
   );
 }

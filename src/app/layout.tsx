@@ -23,7 +23,7 @@ export default function RootLayout({
       lang="fr"
       className={`${inter.variable} font-sans h-full antialiased`}
     >
-      <body className="min-h-screen flex flex-col bg-gray-50">
+      <body className="min-h-screen flex flex-col bg-[#f8fafc]">
         <Navbar />
         <main className="flex-1">
           {children}

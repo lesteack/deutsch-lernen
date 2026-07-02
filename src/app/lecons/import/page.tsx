@@ -55,6 +55,9 @@ export default function PdfImportPage() {
   // État pour le contenu extrait
   const [rawText, setRawText] = useState('');
   const [chapters, setChapters] = useState<PdfChapter[]>([]);
+  
+  // Type de leçon par défaut pour le manuel
+  const [defaultLessonType, setDefaultLessonType] = useState<Lecon['type']>('autre');
 
   const router = useRouter();
 
@@ -425,7 +428,7 @@ export default function PdfImportPage() {
         for (const lesson of validLessons) {
           const leconData: Omit<Lecon, 'id' | 'dateAjout'> = {
             titre: lesson.title.trim() || `Leçon ${validLessons.findIndex(l => l.id === lesson.id) + 1}`,
-            type: 'autre', // Par défaut, l'utilisateur pourra modifier plus tard
+            type: defaultLessonType,
             contenuTexte: lesson.text.trim(),
             notionsCles: extractNotionsFromText(lesson.text),
           };
@@ -554,6 +557,23 @@ export default function PdfImportPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type de leçon par défaut
+                </label>
+                <select
+                  value={defaultLessonType}
+                  onChange={(e) => setDefaultLessonType(e.target.value as Lecon['type'])}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="grammaire">Grammaire</option>
+                  <option value="vocabulaire">Vocabulaire</option>
+                  <option value="conjugaison">Conjugaison</option>
+                  <option value="autre">Autre</option>
+                </select>
               </div>
 
               <div className="pt-4">

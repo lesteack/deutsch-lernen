@@ -16,7 +16,7 @@
 export interface Lecon {
   id: string;
   titre: string;
-  type: 'grammaire' | 'vocabulaire' | 'autre';
+  type: 'grammaire' | 'vocabulaire' | 'conjugaison' | 'autre';
   contenuTexte: string;
   notionsCles: string[];
   dateAjout: string;

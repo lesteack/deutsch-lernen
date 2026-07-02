@@ -12,19 +12,28 @@ import {
 import { calculerScoresParCritere, calculerScoreGlobal } from '@/lib/progression';
 
 // ============================================================================
-// COULEURS PAR NIVEAU CECRL
+// COULEURS - Design moderne et motivant
 // ============================================================================
 
-const niveauBadgeColors: Record<NiveauCECRL, string> = {
-  A1: 'bg-green-100 text-green-800 border-green-200',
-  A2: 'bg-green-200 text-green-900 border-green-300',
-  B1: 'bg-blue-100 text-blue-800 border-blue-200',
-  B2: 'bg-blue-200 text-blue-900 border-blue-300',
-  C1: 'bg-purple-100 text-purple-800 border-purple-200',
-  C2: 'bg-purple-200 text-purple-900 border-purple-300',
+// Couleurs principales
+const colors = {
+  primary: '#1e1b4b',      // Bleu très foncé pour les titres
+  text: '#1e293b',         // Texte principal (quasi-noir)
+  bgLight: '#f8fafc',      // Fond très clair
+  bgCard: 'white',         // Fond des cartes
 };
 
-// Couleurs pour les compétences
+// Badges de niveau CECRL
+const niveauBadgeColors: Record<NiveauCECRL, { bg: string; text: string; border: string }> = {
+  A1: { bg: '#dcfce7', text: '#16a34a', border: '#86efac' },  // Vert clair
+  A2: { bg: '#bbf7d0', text: '#16a34a', border: '#4ade80' },
+  B1: { bg: '#dbeafe', text: '#2563eb', border: '#93c5fd' },  // Bleu clair
+  B2: { bg: '#bfdbfe', text: '#2563eb', border: '#60a5fa' },
+  C1: { bg: '#ede9fe', text: '#7c3aed', border: '#c4b5fd' },  // Violet clair
+  C2: { bg: '#e9d5ff', text: '#7c3aed', border: '#a78bfa' },
+};
+
+// Couleurs des compétences
 const skillColors = {
   comprehensionOrale: 'bg-orange-500',
   comprehensionEcrite: 'bg-blue-500',
@@ -89,20 +98,25 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
+  // Couleur du badge de niveau
+  const niveauColor = progression?.niveauEstimeCECRL 
+    ? niveauBadgeColors[progression.niveauEstimeCECRL] 
+    : niveauBadgeColors.A1;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-4 md:p-8">
       {/* En-tête */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">
+        <h1 className="text-3xl font-bold" style={{ color: colors.primary }}>
           Tableau de bord
         </h1>
-        <p className="text-gray-600">
+        <p className="text-gray-600 mt-2">
           Suivez votre progression en allemand
         </p>
       </div>
@@ -113,16 +127,19 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Niveau CECRL */}
         <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br opacity-10
-            from-blue-100 to-purple-100"></div>
+          <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-blue-100 to-purple-100"></div>
           <div className="relative">
             <h2 className="text-sm font-medium text-gray-500 mb-2">
               Niveau CECRL
             </h2>
             <div className="flex items-center gap-3 mb-2">
               <span
-                className={`px-4 py-2 rounded-full border-2 font-bold text-lg
-                  ${niveauBadgeColors[progression?.niveauEstimeCECRL || 'A1']}`}
+                className="px-4 py-2 rounded-full border-2 font-bold text-lg"
+                style={{
+                  backgroundColor: niveauColor.bg,
+                  color: niveauColor.text,
+                  borderColor: niveauColor.border
+                }}
               >
                 {progression?.niveauEstimeCECRL || 'A1'}
               </span>
@@ -140,8 +157,7 @@ export default function DashboardPage() {
 
         {/* Streak */}
         <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br opacity-10
-            from-orange-100 to-red-100"></div>
+          <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-orange-100 to-red-100"></div>
           <div className="relative">
             <h2 className="text-sm font-medium text-gray-500 mb-2">
               Streak
@@ -162,14 +178,13 @@ export default function DashboardPage() {
 
         {/* Score global */}
         <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br opacity-10
-            from-green-100 to-blue-100"></div>
+          <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-green-100 to-blue-100"></div>
           <div className="relative">
             <h2 className="text-sm font-medium text-gray-500 mb-2">
               Score global
             </h2>
             <div className="flex items-center gap-2">
-              <span className="text-3xl font-bold text-gray-800">
+              <span className="text-3xl font-bold" style={{ color: colors.primary }}>
                 {scoreGlobal}
               </span>
               <span className="text-gray-500">/100</span>
@@ -185,7 +200,7 @@ export default function DashboardPage() {
            BARRES DE PROGRESSION PAR COMPÉTENCE
          ====================================================================== */}
       <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">
+        <h2 className="text-lg font-semibold mb-4" style={{ color: colors.primary }}>
           Progression par compétence
         </h2>
         <div className="space-y-4">
@@ -195,7 +210,7 @@ export default function DashboardPage() {
                 <span className="font-medium text-gray-700">
                   {skillLabels[skill] || skill}
                 </span>
-                <span className="text-gray-500">{score}/100</span>
+                <span className="text-gray-500">{Math.round(score)}/100</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
@@ -213,7 +228,7 @@ export default function DashboardPage() {
          ====================================================================== */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold" style={{ color: colors.primary }}>
             Derniers exercices
           </h2>
           {dernierExercices.length > 0 && (
@@ -245,9 +260,10 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium text-gray-600">
                       {index + 1}.
                     </span>
-                    <span className="font-medium text-gray-800">
+                    <span className="font-medium" style={{ color: colors.primary }}>
                       {exercice.type === 'qcm' ? 'QCM' : 
                        exercice.type === 'texteATrous' ? 'Texte à trous' :
+                       exercice.type === 'conjugaison' ? 'Conjugaison' :
                        exercice.type}
                     </span>
                   </div>
@@ -282,11 +298,11 @@ export default function DashboardPage() {
           className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group"
         >
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-              <span className="text-2xl">📝</span>
+            <div className="w-12 h-12 bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
+              <span className="text-2xl text-white">📝</span>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-800 group-hover:text-blue-700">
+              <h3 className="font-semibold text-gray-800 group-hover:text-[#3730a3]">
                 Générer un exercice
               </h3>
               <p className="text-sm text-gray-600">
@@ -301,11 +317,11 @@ export default function DashboardPage() {
           className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group"
         >
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-200 transition-colors">
-              <span className="text-2xl">🎯</span>
+            <div className="w-12 h-12 bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
+              <span className="text-2xl text-white">🎯</span>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-800 group-hover:text-green-700">
+              <h3 className="font-semibold text-gray-800 group-hover:text-[#3730a3]">
                 S'évaluer
               </h3>
               <p className="text-sm text-gray-600">
@@ -320,7 +336,7 @@ export default function DashboardPage() {
            CONSEILS / MOTIVATION
          ====================================================================== */}
       {progression?.streak && progression.streak > 0 && (
-        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-md p-6 text-white">
+        <div className="bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl shadow-md p-6 text-white">
           <div className="flex items-center gap-4">
             <span className="text-3xl">🎉</span>
             <div>

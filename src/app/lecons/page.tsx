@@ -14,18 +14,20 @@ import {
 // TYPES
 // ============================================================================
 
-type TabType = 'grammaire' | 'vocabulaire' | 'autre';
+type TabType = 'grammaire' | 'vocabulaire' | 'conjugaison' | 'autre';
 
 const tabLabels: Record<TabType, string> = {
   grammaire: 'Grammaire',
   vocabulaire: 'Vocabulaire',
+  conjugaison: 'Conjugaison',
   autre: 'Autre',
 };
 
 const tabColors: Record<TabType, string> = {
-  grammaire: 'text-purple-600 border-purple-600',
-  vocabulaire: 'text-blue-600 border-blue-600',
-  autre: 'text-gray-600 border-gray-600',
+  grammaire: 'purple',
+  vocabulaire: 'blue',
+  conjugaison: 'indigo',
+  autre: 'gray',
 };
 
 // ============================================================================
@@ -183,6 +185,7 @@ export default function LeconsPage() {
                       <span className="text-sm font-medium text-gray-600">
                         {lecon.type === 'grammaire' && '📚'}
                         {lecon.type === 'vocabulaire' && '📖'}
+                        {lecon.type === 'conjugaison' && '🔄'}
                         {lecon.type === 'autre' && '📋'}
                       </span>
                       <h3 className="font-medium text-gray-800">{lecon.titre}</h3>
