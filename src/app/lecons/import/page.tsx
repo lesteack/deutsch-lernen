@@ -2,8 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/types/src/display/api';
 import {
   addManuel,
   addChapitre,
@@ -12,9 +10,6 @@ import {
   type Chapitre,
   type Lecon,
 } from '@/lib/storage';
-
-// Configurer le worker PDF.js avec CDN
-GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.js';
 
 // ============================================================================
 // TYPES
@@ -38,6 +33,14 @@ interface PdfChapter {
 type ImportStep = 'upload' | 'extracting' | 'preview' | 'organize';
 
 // ============================================================================
+// CONSTANTES
+// ============================================================================
+
+const PDF_WORKER_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.js';
+const TARGET_WORDS_PER_SECTION = 400;
+const SECTIONS_PER_CHAPTER = 6;
+
+// ============================================================================
 // COMPOSANT PRINCIPAL
 // ============================================================================
 
@@ -57,38 +60,50 @@ export default function PdfImportPage() {
   const router = useRouter();
 
   // ==========================================================================
-  // EXTRACTION DU TEXTE
+  // EXTRACTION DU TEXTE (chargement dynamique de pdfjs-dist)
   // ==========================================================================
 
   /**
    * Extrait le texte de toutes les pages d'un PDF
+   * Charge pdfjs-dist dynamiquement pour éviter les erreurs SSR
    */
   const extractTextFromPdf = useCallback(async (pdfFile: File) => {
+    // Vérifier qu'on est bien côté client
+    if (typeof window === 'undefined') {
+      setError('Impossible de traiter le PDF : environnement non supporté');
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setStep('extracting');
 
     try {
+      // Charger pdfjs-dist dynamiquement
+      const pdfjsLib = await import('pdfjs-dist');
+      
+      // Configurer le worker (doit être fait après le chargement)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
+
       // Lire le fichier comme ArrayBuffer
       const arrayBuffer = await pdfFile.arrayBuffer();
       
       // Charger le document PDF
-      const pdf: PDFDocumentProxy = await getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
       let fullText = '';
-      const pageTexts: string[] = [];
 
       // Extraire le texte de chaque page
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page: PDFPageProxy = await pdf.getPage(pageNum);
+        const page = await pdf.getPage(pageNum);
         const content = await page.getTextContent();
         
         // pdfjs-dist peut retourner différents types d'items
         // On extrait le champ 'str' de chaque item
-        const textItems = content.items.map((item: any) => item.str || '');
+        const textItems: string[] = content.items.map((item: any) => item.str || '');
         const pageText = textItems.join(' ').trim();
         
-        pageTexts.push(pageText);
         fullText += pageText + '\n\n';
       }
 
@@ -115,14 +130,21 @@ export default function PdfImportPage() {
 
   /**
    * Découpe le texte en sections (futures leçons)
-   * Une section = ~300-500 mots
+   * Une section = ~400 mots
    */
   const splitTextIntoSections = (text: string): PdfTextSection[] => {
     // Nettoyer le texte : remplacer les espaces multiples
     const cleanedText = text.replace(/\s+/g, ' ').trim();
 
+    if (cleanedText.length === 0) {
+      return [{
+        id: crypto.randomUUID(),
+        text: '',
+        title: 'Nouvelle section',
+      }];
+    }
+
     // Découper en paragraphes (2 sauts de ligne ou plus)
-    // Garder les sauts de ligne simples pour la structure
     const paragraphs = cleanedText.split(/\n{2,}/).filter(p => p.trim().length > 0);
 
     if (paragraphs.length === 0) {
@@ -133,21 +155,20 @@ export default function PdfImportPage() {
       }];
     }
 
-    // Regrouper les paragraphes en sections de ~400 mots
+    // Regrouper les paragraphes en sections de ~TARGET_WORDS_PER_SECTION mots
     const sections: PdfTextSection[] = [];
     let currentSection: { text: string; paragraphs: string[] } = { 
       text: '', 
       paragraphs: [] 
     };
     let currentWordCount = 0;
-    const TARGET_WORDS = 400;
 
     for (const para of paragraphs) {
       const paraWords = para.split(/\s+/).filter(w => w.trim().length > 0);
       const paraWordCount = paraWords.length;
 
       // Si ajouter ce paragraphe dépasse la cible, finaliser la section actuelle
-      if (currentWordCount + paraWordCount > TARGET_WORDS && currentSection.text.length > 0) {
+      if (currentWordCount + paraWordCount > TARGET_WORDS_PER_SECTION && currentSection.text.length > 0) {
         sections.push({
           id: crypto.randomUUID(),
           text: currentSection.text.trim(),
@@ -174,8 +195,8 @@ export default function PdfImportPage() {
     }
 
     // Si on a une seule section très longue, la découper en plusieurs
-    if (sections.length === 1 && currentWordCount > TARGET_WORDS * 2) {
-      return splitLongSection(sections[0], TARGET_WORDS);
+    if (sections.length === 1 && currentWordCount > TARGET_WORDS_PER_SECTION * 2) {
+      return splitLongSection(sections[0], TARGET_WORDS_PER_SECTION);
     }
 
     return sections;
@@ -244,7 +265,6 @@ export default function PdfImportPage() {
     }
 
     const chapters: PdfChapter[] = [];
-    const SECTIONS_PER_CHAPTER = 6;
     
     for (let i = 0; i < sections.length; i += SECTIONS_PER_CHAPTER) {
       const chunk = sections.slice(i, i + SECTIONS_PER_CHAPTER);
@@ -360,6 +380,11 @@ export default function PdfImportPage() {
   // ==========================================================================
 
   const handleSave = () => {
+    if (typeof window === 'undefined') {
+      setError('Impossible de sauvegarder : environnement non supporté');
+      return;
+    }
+
     if (!manuelTitle.trim()) {
       setError('Veuillez donner un titre au manuel');
       return;
@@ -473,9 +498,7 @@ export default function PdfImportPage() {
           </div>
         )}
 
-        {/* ======================================================================
-             ÉTAPE 1 : UPLOAD DU FICHIER
-           ====================================================================== */}
+        {/* ÉTAPE 1 : UPLOAD DU FICHIER */}
         {step === 'upload' && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-gray-700 mb-4">
@@ -550,9 +573,7 @@ export default function PdfImportPage() {
           </div>
         )}
 
-        {/* ======================================================================
-             ÉTAPE 2 : EXTRACTION EN COURS
-           ====================================================================== */}
+        {/* ÉTAPE 2 : EXTRACTION EN COURS */}
         {step === 'extracting' && (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
@@ -568,12 +589,9 @@ export default function PdfImportPage() {
           </div>
         )}
 
-        {/* ======================================================================
-             ÉTAPE 3 : APERÇU DU TEXTE EXTRAIT
-           ====================================================================== */}
+        {/* ÉTAPE 3 : APERÇU DU TEXTE EXTRAIT */}
         {step === 'preview' && (
           <div className="space-y-6">
-            {/* En-tête de l'apercu */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-700 mb-2">
                 Étape 2 : Aperçu du texte extrait
@@ -599,7 +617,6 @@ export default function PdfImportPage() {
               </div>
             </div>
 
-            {/* Aperçu des chapitres */}
             <div className="space-y-4">
               {chapters.map((chapter, chapterIndex) => (
                 <div key={chapter.id} className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -637,12 +654,9 @@ export default function PdfImportPage() {
           </div>
         )}
 
-        {/* ======================================================================
-             ÉTAPE 4 : ORGANISATION ET ÉDITION
-           ====================================================================== */}
+        {/* ÉTAPE 4 : ORGANISATION ET ÉDITION */}
         {step === 'organize' && (
           <div className="space-y-6">
-            {/* En-tête de l'organisation */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-700 mb-2">
                 Étape 3 : Organiser et éditer le contenu
@@ -679,11 +693,9 @@ export default function PdfImportPage() {
               </div>
             </div>
 
-            {/* Éditeur de chapitres et leçons */}
             <div className="space-y-4">
               {chapters.map((chapter, chapterIndex) => (
                 <div key={chapter.id} className="bg-white rounded-lg shadow-md overflow-hidden">
-                  {/* En-tête du chapitre */}
                   <div className="bg-blue-50 p-4 border-b border-blue-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -714,7 +726,6 @@ export default function PdfImportPage() {
                     </button>
                   </div>
 
-                  {/* Liste des leçons */}
                   <div className="divide-y divide-gray-200">
                     {chapter.lessons.map((lesson, lessonIndex) => (
                       <div key={lesson.id} className="p-4">
