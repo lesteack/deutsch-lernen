@@ -5,11 +5,11 @@ import {
   getAllLecons,
   getProgression,
   addExercice,
-  mettreAJourProgression,
   type Lecon,
   type ExerciceType,
   type NiveauCECRL,
 } from '@/lib/storage';
+import { mettreAJourProgression } from '@/lib/progression';
 
 // ============================================================================
 // TYPES
