@@ -1,11 +1,21 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Playfair_Display } from 'next/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 
-const inter = Inter({
+// Police pour le corps de texte (moderne et lisible)
+const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-body',
+  display: 'swap',
+});
+
+// Police pour les titres (élégant et sérieux)
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-heading',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -21,9 +31,9 @@ export default function RootLayout({
   return (
     <html
       lang="fr"
-      className={`${inter.variable} font-sans h-full antialiased`}
+      className={`${plusJakartaSans.variable} ${playfairDisplay.variable} h-full antialiased`}
     >
-      <body className="min-h-screen flex flex-col bg-[#f8fafc]">
+      <body className="min-h-screen flex flex-col bg-[#f8fafc] font-body">
         <Navbar />
         <main className="flex-1">
           {children}
