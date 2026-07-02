@@ -82,8 +82,9 @@ export default function PdfImportPage() {
       // Charger pdfjs-dist dynamiquement
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Configurer le worker - fallback le plus compatible avec Turbopack
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      // Configurer le worker avec l'URL CDN pour la version 6.1.200
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 
+        'https://unpkg.com/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs';
 
       // Lire le fichier comme ArrayBuffer
       const arrayBuffer = await pdfFile.arrayBuffer();
