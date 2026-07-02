@@ -36,7 +36,6 @@ type ImportStep = 'upload' | 'extracting' | 'preview' | 'organize';
 // CONSTANTES
 // ============================================================================
 
-const PDF_WORKER_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.js';
 const TARGET_WORDS_PER_SECTION = 400;
 const SECTIONS_PER_CHAPTER = 6;
 
@@ -83,8 +82,17 @@ export default function PdfImportPage() {
       // Charger pdfjs-dist dynamiquement
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Configurer le worker (doit être fait après le chargement)
-      pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
+      // Configurer le worker avec le worker local
+      // Essayer d'abord avec le worker local via import.meta.url
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          'pdfjs-dist/build/pdf.worker.min.mjs',
+          import.meta.url
+        ).toString();
+      } catch {
+        // Fallback sans worker pour Turbopack/Next.js 16
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      }
 
       // Lire le fichier comme ArrayBuffer
       const arrayBuffer = await pdfFile.arrayBuffer();
