@@ -10,6 +10,7 @@ import {
   type NiveauCECRL,
 } from '@/lib/storage';
 import { mettreAJourProgression } from '@/lib/progression';
+import { predefinedThemes } from '@/lib/themes';
 
 // ============================================================================
 // TYPES
@@ -66,6 +67,9 @@ interface ExerciseCorrection {
   }>;
 }
 
+/** Type de source pour le thème */
+type ThemeSource = 'cours' | 'libre';
+
 /** Étapes du flux */
 type ExerciseStep = 'select' | 'generating' | 'answering' | 'correcting' | 'saved';
 
@@ -76,8 +80,15 @@ type ExerciseStep = 'select' | 'generating' | 'answering' | 'correcting' | 'save
 export default function ExercicesPage() {
   // État pour les leçons disponibles
   const [lecons, setLecons] = useState<Lecon[]>([]);
+  
+  // État pour le sélecteur de thème
+  const [themeSource, setThemeSource] = useState<ThemeSource>('cours');
   const [selectedLecon, setSelectedLecon] = useState<Lecon | null>(null);
+  const [selectedTheme, setSelectedTheme] = useState<string>('Voyage');
+  const [customTheme, setCustomTheme] = useState<string>('');
+  
   const [selectedType, setSelectedType] = useState<ExerciceType>('qcm');
+  const [niveauCECRL, setNiveauCECRL] = useState<NiveauCECRL>('A1');
   
   // État pour le flux d'exercice
   const [step, setStep] = useState<ExerciseStep>('select');
@@ -89,7 +100,6 @@ export default function ExercicesPage() {
   const [textAnswer, setTextAnswer] = useState<string>('');
   
   const [correction, setCorrection] = useState<ExerciseCorrection | null>(null);
-  const [niveauCECRL, setNiveauCECRL] = useState<NiveauCECRL>('A1');
   
   // État UI
   const [isLoading, setIsLoading] = useState(false);
@@ -102,7 +112,49 @@ export default function ExercicesPage() {
     
     const progression = getProgression();
     setNiveauCECRL(progression.niveauEstimeCECRL);
+    
+    // Sélectionner une leçon aléatoire pour le mode 'cours'
+    if (allLecons.length > 0) {
+      const randomIndex = Math.floor(Math.random() * allLecons.length);
+      setSelectedLecon(allLecons[randomIndex]);
+    }
   }, []);
+
+  // ==========================================================================
+  // SÉLECTEUR DE THÈME
+  // ==========================================================================
+
+  /**
+   * Sélectionne une leçon aléatoire
+   */
+  const selectRandomLecon = useCallback(() => {
+    if (lecons.length === 0) {
+      setError('Aucune leçon disponible. Importez d\'abord un PDF via /lecons/import');
+      return null;
+    }
+    const randomIndex = Math.floor(Math.random() * lecons.length);
+    return lecons[randomIndex];
+  }, [lecons]);
+
+  /**
+   * Récupère le contexte/thème actuel
+   */
+  const getCurrentContext = useCallback((): { type: 'lecon' | 'theme'; value: string; title: string } => {
+    if (themeSource === 'cours' && selectedLecon) {
+      return {
+        type: 'lecon',
+        value: selectedLecon.contenuTexte,
+        title: `Basé sur : ${selectedLecon.titre}`,
+      };
+    } else {
+      const finalTheme = customTheme.trim() || selectedTheme;
+      return {
+        type: 'theme',
+        value: finalTheme,
+        title: `Thème : ${finalTheme}`,
+      };
+    }
+  }, [themeSource, selectedLecon, selectedTheme, customTheme]);
 
   // ==========================================================================
   // GÉNÉRATION D'EXERCICE
@@ -111,25 +163,24 @@ export default function ExercicesPage() {
   /**
    * Génère un prompt pour Mistral selon le type d'exercice
    */
-  const buildExercisePrompt = useCallback((lecon: Lecon, type: ExerciceType): string => {
-    const content = lecon.contenuTexte;
-    const title = lecon.titre;
-    const notions = lecon.notionsCles.join(', ');
-    
+  const buildExercisePrompt = useCallback((type: ExerciceType): string => {
+    const context = getCurrentContext();
+    const content = context.type === 'lecon' ? context.value : context.value;
+    const title = context.title;
+
     const basePrompt = `Tu es un professeur d'allemand. Crée un exercice basé sur le contenu suivant :
 
 ---
 Titre: ${title}
-Notions: ${notions}
-Contenu: ${content}
+Contenu: ${content.substring(0, 1000)}
+Niveau de l'élève: ${niveauCECRL}
 ---
 
-Niveau de l'élève: ${niveauCECRL}
 `;
 
     if (type === 'qcm') {
       return `${basePrompt}
-Crée UN SEUL message JSON contenant EXACTEMENT 20 questions QCM (Question à Choix Multiples) sur le contenu ci-dessus.
+Crée UN SEUL message JSON contenant EXACTEMENT 20 questions QCM (Question à Choix Multiples).
 
 Chaque question doit avoir :
 - Une question claire en allemand
@@ -176,20 +227,23 @@ Réponds avec un JSON contenant :
     // Pour les autres types
     return `${basePrompt}
 Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
-  }, [niveauCECRL]);
+  }, [getCurrentContext, niveauCECRL]);
 
   /**
    * Génère un exercice via l'API Mistral
    */
   const generateExercise = useCallback(async () => {
-    if (!selectedLecon) return;
+    if ((themeSource === 'cours' && !selectedLecon) || (themeSource === 'libre' && !selectedTheme && !customTheme)) {
+      setError('Veuillez sélectionner une leçon ou un thème');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
     setStep('generating');
 
     try {
-      const prompt = buildExercisePrompt(selectedLecon, selectedType);
+      const prompt = buildExercisePrompt(selectedType);
 
       const response = await fetch('/api/mistral', {
         method: 'POST',
@@ -263,7 +317,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       setStep('select');
       setIsLoading(false);
     }
-  }, [selectedLecon, selectedType, buildExercisePrompt]);
+  }, [selectedType, buildExercisePrompt, themeSource, selectedLecon, selectedTheme, customTheme]);
 
   // ==========================================================================
   // CORRECTION
@@ -429,7 +483,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       // Sauvegarder via storage
       const newExercice = addExercice({
         type: generatedExercise.type,
-        leconsAssociees: [selectedLecon.id],
+        leconsAssociees: themeSource === 'cours' && selectedLecon ? [selectedLecon.id] : [],
         contenuJSON,
         reponseUtilisateur: generatedExercise.type === 'qcm' 
           ? JSON.stringify(qcmAnswers) 
@@ -447,7 +501,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       setError(`Impossible de sauvegarder l'exercice : ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
       return null;
     }
-  }, [generatedExercise, correction, selectedLecon, qcmAnswers, textAnswer]);
+  }, [generatedExercise, correction, selectedLecon, qcmAnswers, textAnswer, themeSource]);
 
   // ==========================================================================
   // RENDU
@@ -458,7 +512,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       <div className="max-w-4xl mx-auto">
         {/* En-tête */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">Exercices</h1>
+          <h1 className="text-3xl font-bold font-serif text-[#1e1b4b]">Exercices</h1>
           <p className="text-gray-600 mt-2">
             Générez et corrigez des exercices à partir de vos leçons
           </p>
@@ -478,44 +532,117 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
         )}
 
         {/* ======================================================================
-             ÉTAPE 1 : SÉLECTION
+             ÉTAPE 1 : SÉLECTION + SÉLECTEUR DE THÈME
            ====================================================================== */}
         {step === 'select' && (
           <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
-            <h2 className="text-xl font-semibold text-gray-700">
-              Générer un exercice
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Sélectionnez votre source de contenu
             </h2>
 
-            {/* Sélection de la leçon */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Sélectionner une leçon
-              </label>
-              {lecons.length === 0 ? (
-                <p className="text-gray-500 text-sm">
-                  Aucune leçon disponible. Importez d'abord un PDF via 
-                  <a href="/lecons/import" className="text-blue-600 hover:underline">/lecons/import</a>
-                </p>
-              ) : (
-                <select
-                  value={selectedLecon?.id || ''}
+            {/* Options de source */}
+            <div className="flex gap-4 mb-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="themeSource"
+                  value="cours"
+                  checked={themeSource === 'cours'}
                   onChange={(e) => {
-                    const leconId = e.target.value;
-                    const lecon = lecons.find(l => l.id === leconId);
-                    setSelectedLecon(lecon || null);
+                    setThemeSource(e.target.value as ThemeSource);
+                    const lecon = selectRandomLecon();
+                    if (lecon) setSelectedLecon(lecon);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">-- Choix d'une leçon --</option>
-                  {lecons.map(lecon => (
-                    <option key={lecon.id} value={lecon.id}>
-                      {lecon.titre} ({lecon.type}) - {lecon.contenuTexte.substring(0, 50)}...
-                    </option>
-                  ))}
-                </select>
-              )}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-gray-700">Option A — Basé sur mes cours</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="themeSource"
+                  value="libre"
+                  checked={themeSource === 'libre'}
+                  onChange={(e) => setThemeSource(e.target.value as ThemeSource)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-gray-700">Option B — Choisir un thème libre</span>
+              </label>
             </div>
+
+            {/* Option A : Basé sur mes cours */}
+            {themeSource === 'cours' && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-medium text-gray-800">Leçon sélectionnée</h3>
+                  <button
+                    onClick={() => {
+                      const lecon = selectRandomLecon();
+                      if (lecon) setSelectedLecon(lecon);
+                    }}
+                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm"
+                  >
+                    🔄 Choisir aléatoirement
+                  </button>
+                </div>
+                
+                {selectedLecon ? (
+                  <div className="space-y-2">
+                    <p className="font-medium text-gray-700">
+                      {selectedLecon.titre} <span className="text-sm text-gray-500">({selectedLecon.type})</span>
+                    </p>
+                    <p className="text-sm text-gray-600 line-clamp-2">
+                      {selectedLecon.contenuTexte}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm">
+                    Aucune leçon disponible. Importez un PDF via <a href="/lecons/import" className="text-blue-600 hover:underline">/lecons/import</a>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Option B : Choisir un thème libre */}
+            {themeSource === 'libre' && (
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sélectionner un thème prédéfini
+                  </label>
+                  <select
+                    value={selectedTheme}
+                    onChange={(e) => setSelectedTheme(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {predefinedThemes.map((theme) => (
+                      <option key={theme} value={theme}>{theme}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ou saisir un autre thème
+                  </label>
+                  <input
+                    type="text"
+                    value={customTheme}
+                    onChange={(e) => setCustomTheme(e.target.value)}
+                    placeholder="Ex: Les voyages en train, Mon animal préféré..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Affichage du contexte sélectionné */}
+            {getCurrentContext().title && (
+              <div className="bg-blue-50 rounded-lg p-3">
+                <p className="text-sm text-blue-700">
+                  {getCurrentContext().title}
+                </p>
+              </div>
+            )}
 
             {/* Sélection du type d'exercice */}
             <div>
@@ -525,10 +652,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
               <select
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value as ExerciceType)}
-                disabled={!selectedLecon}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                  disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="qcm">QCM (20 questions)</option>
                 <option value="texteATrous">Texte à trous</option>
@@ -540,7 +664,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
               )}
             </div>
 
-            {/* Niveau CECRL */}
+            {/* Sélection du niveau CECRL */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Niveau estimé
@@ -548,8 +672,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
               <select
                 value={niveauCECRL}
                 onChange={(e) => setNiveauCECRL(e.target.value as NiveauCECRL)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="A1">A1 - Débutant</option>
                 <option value="A2">A2 - Élémentaire</option>
@@ -561,24 +684,33 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
             </div>
 
             {/* Bouton de génération */}
-            <button
-              onClick={generateExercise}
-              disabled={!selectedLecon || isLoading}
-              className={`w-full px-6 py-3 rounded-md text-white font-medium 
-                ${selectedLecon && !isLoading 
-                  ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
-                  : 'bg-blue-300 cursor-not-allowed'}
-                transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
-            >
-              {isLoading ? (
-                <>
-                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                  Génération en cours...
-                </>
-              ) : (
-                `Générer ${selectedType === 'qcm' ? '20 questions QCM' : 'un exercice'}`
-              )}
-            </button>
+            {(themeSource === 'cours' && !selectedLecon) ? (
+              <button
+                className="w-full px-6 py-3 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed"
+                disabled
+              >
+                Veuillez importer une leçon d\'abord
+              </button>
+            ) : (
+              <button
+                onClick={generateExercise}
+                disabled={isLoading}
+                className={`w-full px-6 py-3 rounded-md text-white font-medium  
+                  ${!isLoading 
+                    ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
+                    : 'bg-blue-300 cursor-not-allowed'}
+                  transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
+              >
+                {isLoading ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                    Génération en cours...
+                  </>
+                ) : (
+                  `Générer ${selectedType === 'qcm' ? '20 questions QCM' : 'un exercice'}`
+                )}
+              </button>
+            )}
           </div>
         )}
 
@@ -593,8 +725,8 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
             </h2>
             <p className="text-gray-600">
               {selectedType === 'qcm' 
-                ? 'Mistral génère 20 questions QCM à partir de votre leçon...' 
-                : 'Mistral génère un exercice à partir de votre leçon...'}
+                ? 'Mistral génère 20 questions QCM à partir de votre contenu...' 
+                : 'Mistral génère un exercice à partir de votre contenu...'}
             </p>
           </div>
         )}
@@ -606,7 +738,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
           <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
             {/* En-tête de l'exercice */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-700">
+              <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
                 {generatedExercise.type === 'qcm' ? 'QCM - 20 questions' : 'Texte à trous'}
               </h2>
               <span className="text-sm text-gray-500">
@@ -759,16 +891,16 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
                     </p>
                     <p className="text-sm">
                       <span className="text-gray-600">Votre réponse:</span> 
-                      <span className={corr.isCorrect ? 'text-green-700' : 'text-red-700'}>
-                        {corr.userAnswer || 'Non répondue'}
-                      </span>
+                      <span className={corr.isCorrect ? 'text-green-700' : 'text-red-700'}>{
+                        corr.userAnswer || 'Non répondue'
+                      }</span>
                     </p>
                     <p className="text-sm">
                       <span className="text-gray-600">Réponse correcte:</span> 
                       <span className="text-green-700 font-medium">{corr.correctAnswer}</span>
                     </p>
-                    {corr.explication && (
-                      <p className="text-xs text-gray-500 mt-1">{corr.explication}</p>
+                    {corr.explanation && (
+                      <p className="text-xs text-gray-500 mt-1">{corr.explanation}</p>
                     )}
                   </div>
                 ))}

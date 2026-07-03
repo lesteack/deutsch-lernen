@@ -3,12 +3,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getTextesSupport,
+  getAllLecons,
+  getProgression,
   addEvaluation,
   type TexteSupport,
   type TexteSupportType,
   type Evaluation,
   type CritereEvaluation,
+  type Lecon,
+  type NiveauCECRL,
 } from '@/lib/storage';
+import { predefinedThemes, themeToContext, getRandomTheme, normalizeTheme } from '@/lib/themes';
 
 // ============================================================================
 // TYPES
@@ -31,8 +36,36 @@ interface ComprehensionEvaluation {
   questions: ComprehensionQuestion[];
 }
 
+/** Type pour un sujet d'expression écrite/orale */
+interface ExpressionSubject {
+  subject: string;
+  instructions: string;
+  niveau: NiveauCECRL;
+}
+
+/** Type pour la correction d'expression écrite */
+interface WrittenCorrection {
+  score: number;
+  grammaire: string;
+  vocabulaire: string;
+  structure: string;
+  conseils: string;
+}
+
+/** Type pour la correction d'expression orale */
+interface OralCorrection {
+  score: number;
+  prononciation: string;
+  grammaire: string;
+  vocabulaire: string;
+  conseils: string;
+}
+
+/** Type de source pour le thème */
+type ThemeSource = 'cours' | 'libre';
+
 /** Étapes du flux d'évaluation */
-type EvaluationStep = 'reading' | 'answering' | 'correcting' | 'saved';
+type EvaluationStep = 'setup' | 'reading' | 'answering' | 'recording' | 'correcting' | 'saved';
 
 // ============================================================================
 // TEXTE DE DÉMONSTRATION
@@ -124,76 +157,153 @@ const tabColors: Record<EvaluationTab, string> = {
 };
 
 // ============================================================================
-// FONCTIONS UTILITAIRES
-// ============================================================================
-
-/**
- * Récupère un TexteSupport de type spécifique ou utilise le demo
- */
-function getTexteSupportByType(type: TexteSupportType): TexteSupport {
-  if (typeof window === 'undefined') {
-    return type === 'ecrit' ? demoTextEcrite : demoTextOral;
-  }
-  
-  const textes = getTextesSupport();
-  const filtered = textes.filter(t => t.type === type);
-  
-  if (filtered.length > 0) {
-    return filtered[0];
-  }
-  
-  return type === 'ecrit' ? demoTextEcrite : demoTextOral;
-}
-
-/**
- * Extrait les 10 premiers mots pour un titre court
- */
-function extractShortTitle(text: string, maxWords: number = 10): string {
-  const words = text.split(/\s+/).filter(w => w.trim().length > 0);
-  const shortWords = words.slice(0, maxWords);
-  return shortWords.join(' ') + (words.length > maxWords ? '...' : '');
-}
-
-// ============================================================================
 // COMPOSANT PRINCIPAL
 // ============================================================================
 
 export default function EvaluationPage() {
   const [activeTab, setActiveTab] = useState<EvaluationTab>('comprehensionOrale');
   
+  // État pour la source du thème
+  const [themeSource, setThemeSource] = useState<ThemeSource>('cours');
+  const [selectedLecon, setSelectedLecon] = useState<Lecon | null>(null);
+  const [selectedTheme, setSelectedTheme] = useState<string>('Voyage');
+  const [customTheme, setCustomTheme] = useState<string>('');
+  const [niveauCECRL, setNiveauCECRL] = useState<NiveauCECRL>('A1');
+  
   // État pour la compréhension écrite/orale
   const [evaluationData, setEvaluationData] = useState<ComprehensionEvaluation | null>(null);
-  const [step, setStep] = useState<EvaluationStep>('reading');
+  const [step, setStep] = useState<EvaluationStep>('setup');
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [score, setScore] = useState<number | null>(null);
+  
+  // État pour l'expression écrite
+  const [expressionSubject, setExpressionSubject] = useState<ExpressionSubject | null>(null);
+  const [writtenAnswer, setWrittenAnswer] = useState<string>('');
+  const [writtenCorrection, setWrittenCorrection] = useState<WrittenCorrection | null>(null);
+  
+  // État pour l'expression orale
+  const [oralSubject, setOralSubject] = useState<ExpressionSubject | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState<string>('');
+  const [oralCorrection, setOralCorrection] = useState<OralCorrection | null>(null);
   
   // État UI
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  
+  // ==========================================================================
+  // CHARGEMENT INITIAL
+  // ==========================================================================
+
+  // Charger les leçons et la progression au montage
+  useEffect(() => {
+    const lecons = getAllLecons();
+    const progression = getProgression();
+    
+    if (lecons.length > 0) {
+      // Sélectionner une leçon aléatoire pour le mode 'cours'
+      const randomIndex = Math.floor(Math.random() * lecons.length);
+      setSelectedLecon(lecons[randomIndex]);
+    }
+    
+    setNiveauCECRL(progression.niveauEstimeCECRL);
+  }, []);
+
+  // Réinitialiser lors du changement d'onglet
+  useEffect(() => {
+    setStep('setup');
+    setEvaluationData(null);
+    setExpressionSubject(null);
+    setOralSubject(null);
+    setAnswers({});
+    setWrittenAnswer('');
+    setTranscript('');
+    setScore(null);
+    setWrittenCorrection(null);
+    setOralCorrection(null);
+    setError(null);
+  }, [activeTab]);
 
   // ==========================================================================
-  // GÉNÉRATION DES QUESTIONS
+  // SÉLECTEUR DE THÈME
+  // ==========================================================================
+
+  /**
+   * Récupère une leçon aléatoire
+   */
+  const selectRandomLecon = useCallback(() => {
+    const lecons = getAllLecons();
+    if (lecons.length === 0) {
+      setError('Aucune leçon disponible. Importez d\'abord un PDF via /lecons/import');
+      return null;
+    }
+    const randomIndex = Math.floor(Math.random() * lecons.length);
+    return lecons[randomIndex];
+  }, []);
+
+  /**
+   * Récupère le contexte/thème actuel
+   */
+  const getCurrentContext = useCallback((): { type: 'lecon' | 'theme'; value: string; title: string } => {
+    if (themeSource === 'cours' && selectedLecon) {
+      return {
+        type: 'lecon',
+        value: selectedLecon.contenuTexte,
+        title: `Basé sur : ${selectedLecon.titre}`,
+      };
+    } else {
+      const finalTheme = customTheme.trim() || selectedTheme;
+      return {
+        type: 'theme',
+        value: finalTheme,
+        title: `Thème : ${finalTheme}`,
+      };
+    }
+  }, [themeSource, selectedLecon, selectedTheme, customTheme]);
+
+  // ==========================================================================
+  // GÉNÉRATION DES QUESTIONS (CO/CE)
   // ==========================================================================
 
   /**
    * Génère des questions de compréhension via Mistral
    */
-  const generateQuestions = useCallback(async (texte: string, titre: string, critere: CritereEvaluation) => {
+  const generateComprehensionQuestions = useCallback(async () => {
+    const context = getCurrentContext();
     setIsLoading(true);
     setError(null);
     setStep('answering');
 
     try {
-      const prompt = `Tu es un professeur d'allemand. Crée UN SEUL message JSON contenant EXACTEMENT 5 questions de compréhension sur le texte suivant.
+      let texte: string;
+      let titre: string;
+
+      if (context.type === 'lecon') {
+        texte = context.value;
+        titre = context.title;
+      } else {
+        // Pour un thème, générer un texte adapté
+        texte = context.value;
+        titre = context.title;
+        
+        // Si c'est un simple thème, créer un texte court pour Mistral
+        if (context.type === 'theme') {
+          texte = `Thème : ${context.value}. Crée un court texte en allemand (4-5 phrases) sur ce thème pour poser des questions de compréhension.`;
+          titre = context.title;
+        }
+      }
+
+      const prompt = `Tu es un professeur d'allemand. Crée UN SEUL message JSON contenant EXACTEMENT 5 questions de compréhension sur le contenu suivant.
 
 ---
 Titre: ${titre}
-Texte: ${texte}
+Contenu: ${texte}
+Niveau: ${niveauCECRL}
 ---
 
 Chaque question doit avoir :
-- Une question claire en allemand (basée sur le contenu du texte)
+- Une question claire en allemand (basée sur le contenu)
 - 4 choix de réponse (1 correcte, 3 incorrectes mais plausibles)
 - La bonne réponse indiquée par son INDEX (0, 1, 2 ou 3)
 - Une explication pédagogique en français
@@ -250,9 +360,13 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
         };
       });
 
+      // Utiliser le texte original si disponible
+      const finalTexte = context.type === 'lecon' ? context.value : demoTextEcrite.contenu;
+      const finalTitre = context.title;
+
       setEvaluationData({
-        texte,
-        titre,
+        texte: finalTexte,
+        titre: finalTitre,
         questions: validQuestions,
       });
       
@@ -261,23 +375,106 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
       setError(`Impossible de générer les questions : ${errorMessage}`);
-      setStep('reading');
+      setStep('setup');
       setIsLoading(false);
     }
-  }, []);
+  }, [getCurrentContext, niveauCECRL]);
+
+  // ==========================================================================
+  // GÉNÉRATION DE SUJETS (EE/EO)
+  // ==========================================================================
 
   /**
-   * Lit le texte à voix haute (Compréhension Orale)
+   * Génère un sujet d'expression via Mistral
    */
+  const generateExpressionSubject = useCallback(async (forOral: boolean = false) => {
+    const context = getCurrentContext();
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const contextText = context.type === 'lecon' 
+        ? `Basé sur cette leçon : ${context.value.substring(0, 500)}...`
+        : `Thème : ${context.value}`;
+
+      const prompt = `Tu es un professeur d'allemand. Crée un sujet d'expression ${forOral ? 'orale' : 'écrite'} pour un élève de niveau ${niveauCECRL}.
+
+---
+Contexte: ${contextText}
+Niveau: ${niveauCECRL}
+Type: ${forOral ? 'oral' : 'écrit'}
+---
+
+${forOral ? 
+        'Crée un sujet court (1-2 phrases max) pour une expression orale spontanée. Le sujet doit être clair et permettre à l\'élève de parler pendant 1-2 minutes.' :
+        'Crée un sujet de rédaction avec des instructions claires. Le sujet doit être adapté au niveau et permettre à l\'élève d\'écrire un texte de 100-150 mots.'
+      }
+
+Réponds avec UN SEUL objet JSON :
+{
+  "subject": "[sujet en français]",
+  "instructions": "[instructions détaillées en français]",
+  "niveau": "${niveauCECRL}"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la génération du sujet');
+      }
+
+      const data = await response.json();
+      
+      if (!data.subject || !data.instructions) {
+        throw new Error('Réponse Mistral invalide : sujet ou instructions manquants');
+      }
+
+      const subject: ExpressionSubject = {
+        subject: String(data.subject),
+        instructions: String(data.instructions),
+        niveau: data.niveau || niveauCECRL,
+      };
+
+      if (forOral) {
+        setOralSubject(subject);
+      } else {
+        setExpressionSubject(subject);
+      }
+      setStep('answering');
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de générer le sujet : ${errorMessage}`);
+      setStep('setup');
+      setIsLoading(false);
+    }
+  }, [getCurrentContext, niveauCECRL]);
+
+  // ==========================================================================
+  // SPEECH SYNTHESIS (CO)
+  // ==========================================================================
+
   const speakText = useCallback((text: string) => {
     if (typeof window === 'undefined') return;
     
-    // Arrêter toute lecture en cours
     window.speechSynthesis.cancel();
     
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'de-DE'; // Voix allemande
-    utterance.rate = 0.9; // Légèrement plus lent pour la compréhension
+    utterance.lang = 'de-DE';
+    utterance.rate = 0.9;
     utterance.pitch = 1;
     
     utterance.onstart = () => setIsPlaying(true);
@@ -290,9 +487,6 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  /**
-   * Arrête la lecture
-   */
   const stopSpeaking = useCallback(() => {
     if (typeof window === 'undefined') return;
     window.speechSynthesis.cancel();
@@ -300,13 +494,80 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
   }, []);
 
   // ==========================================================================
+  // SPEECH RECOGNITION (EO)
+  // ==========================================================================
+
+  // Note: SpeechRecognition n'est pas disponible dans Next.js côté serveur
+  // On utilise l'API du navigateur via window.SpeechRecognition ou webkitSpeechRecognition
+  const startRecording = useCallback(() => {
+    if (typeof window === 'undefined') {
+      setError('La reconnaissance vocale n\'est pas disponible dans cet environnement');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      setError('La reconnaissance vocale n\'est pas supportée par votre navigateur');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'de-DE';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      setTranscript('');
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      setTranscript(prev => prev + finalTranscript);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      setIsRecording(false);
+      setError(`Erreur de reconnaissance vocale : ${event.error}`);
+    };
+
+    recognition.start();
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition && (window as any).currentRecognition) {
+      (window as any).currentRecognition.stop();
+    }
+    setIsRecording(false);
+  }, []);
+
+  // ==========================================================================
   // CORRECTION
   // ==========================================================================
 
   /**
-   * Corrige les réponses
+   * Corrige les réponses de compréhension
    */
-  const correctAnswers = useCallback(() => {
+  const correctComprehensionAnswers = useCallback(() => {
     if (!evaluationData) return;
 
     let correctCount = 0;
@@ -326,23 +587,184 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
     setStep('correcting');
 
     // Sauvegarder l'évaluation
-    saveEvaluation(finalScore);
-  }, [evaluationData, answers]);
+    saveEvaluation(finalScore, activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite');
+  }, [evaluationData, answers, activeTab]);
+
+  /**
+   * Corrige l'expression écrite
+   */
+  const correctWrittenExpression = useCallback(async () => {
+    if (!expressionSubject || !writtenAnswer.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige ce texte écrit par un élève de niveau ${niveauCECRL}.
+
+---
+Sujet: ${expressionSubject.subject}
+Texte de l'élève: ${writtenAnswer}
+Niveau: ${niveauCECRL}
+---
+
+Fais une correction détaillée et bienveillante avec :
+- Un score global sur 100
+- Des commentaires sur la grammaire
+- Des commentaires sur le vocabulaire
+- Des commentaires sur la structure
+- Des conseils pour améliorer
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "grammaire": "[commentaires sur la grammaire en français]",
+  "vocabulaire": "[commentaires sur le vocabulaire en français]",
+  "structure": "[commentaires sur la structure en français]",
+  "conseils": "[conseils généraux en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      const correction: WrittenCorrection = {
+        score: Number(data.score),
+        grammaire: String(data.grammaire || ''),
+        vocabulaire: String(data.vocabulaire || ''),
+        structure: String(data.structure || ''),
+        conseils: String(data.conseils || ''),
+      };
+
+      setWrittenCorrection(correction);
+      setScore(correction.score);
+      setStep('correcting');
+
+      // Sauvegarder
+      saveEvaluation(correction.score, 'expressionEcrite');
+
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [expressionSubject, writtenAnswer, niveauCECRL]);
+
+  /**
+   * Corrige l'expression orale
+   */
+  const correctOralExpression = useCallback(async () => {
+    if (!oralSubject || !transcript.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette transcription d'expression orale d'un élève de niveau ${niveauCECRL}.
+
+---
+Sujet: ${oralSubject.subject}
+Transcription: ${transcript}
+Niveau: ${niveauCECRL}
+---
+
+Fais une correction détaillée avec :
+- Un score global sur 100
+- Des commentaires sur la prononciation
+- Des commentaires sur la grammaire
+- Des commentaires sur le vocabulaire
+- Des conseils pour améliorer
+
+Note : Sois bienveillant et encourageant. La transcription peut contenir des erreurs dues à la reconnaissance vocale.
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "prononciation": "[commentaires sur la prononciation en français]",
+  "grammaire": "[commentaires sur la grammaire en français]",
+  "vocabulaire": "[commentaires sur le vocabulaire en français]",
+  "conseils": "[conseils généraux en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      const correction: OralCorrection = {
+        score: Number(data.score),
+        prononciation: String(data.prononciation || ''),
+        grammaire: String(data.grammaire || ''),
+        vocabulaire: String(data.vocabulaire || ''),
+        conseils: String(data.conseils || ''),
+      };
+
+      setOralCorrection(correction);
+      setScore(correction.score);
+      setStep('correcting');
+
+      // Sauvegarder
+      saveEvaluation(correction.score, 'expressionOrale');
+
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [oralSubject, transcript, niveauCECRL]);
 
   /**
    * Sauvegarde l'évaluation
    */
-  const saveEvaluation = useCallback((finalScore: number) => {
-    if (!evaluationData) return;
-
+  const saveEvaluation = useCallback((finalScore: number, critere: CritereEvaluation) => {
     try {
-      const critere: CritereEvaluation = 
-        activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite';
-
       const newEvaluation: Omit<Evaluation, 'id' | 'dateRealisation'> = {
         critere,
         portee: 'sequence',
-        sequenceCible: evaluationData.titre,
+        sequenceCible: getCurrentContext().title,
         scoreGlobal: finalScore,
       };
 
@@ -351,23 +773,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
       console.error('Erreur lors de la sauvegarde:', err);
       setError(`Impossible de sauvegarder l'évaluation`);
     }
-  }, [evaluationData, activeTab]);
-
-  // ==========================================================================
-  // CHARGEMENT INITIAL
-  // ==========================================================================
-
-  // Démarrer avec un texte de démonstration
-  useEffect(() => {
-    if (activeTab === 'comprehensionEcrite' || activeTab === 'comprehensionOrale') {
-      const type = activeTab === 'comprehensionEcrite' ? 'ecrit' : 'audio';
-      const texte = getTexteSupportByType(type);
-      
-      // Générer les questions automatiquement
-      const critere: CritereEvaluation = activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite';
-      generateQuestions(texte.contenu, texte.titre, critere);
-    }
-  }, [activeTab, generateQuestions]);
+  }, [getCurrentContext]);
 
   // ==========================================================================
   // RENDU
@@ -406,13 +812,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setStep('reading');
-                setEvaluationData(null);
-                setAnswers({});
-                setScore(null);
-              }}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2
                 ${activeTab === tab.id
                   ? `bg-${tabColors[tab.id]}-100 text-${tabColors[tab.id]}-700`
@@ -427,220 +827,511 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
       </div>
 
       {/* ======================================================================
-           CONTENU SELON L'ONGLET
+           SÉLECTEUR DE THÈME (pour tous les onglets sauf Test Global)
          ====================================================================== */}
-      
-      {(activeTab === 'comprehensionEcrite' || activeTab === 'comprehensionOrale') && (
-        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
-          {/* ÉTAPE 1 : LECTURE / ÉCOUTE */}
-          {step === 'reading' && (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-              <p className="text-gray-600">Chargement du texte et génération des questions...</p>
-            </div>
-          )}
+      {(activeTab !== 'testGlobal') && step === 'setup' && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
+          <h2 className="text-lg font-semibold font-serif text-[#1e1b4b]">
+            Sélectionnez votre source de contenu
+          </h2>
 
-          {/* ÉTAPE 2 : QUESTIONNAIRE */}
-          {step === 'answering' && evaluationData && (
-            <div className="space-y-6">
-              {/* En-tête */}
-              <div className="text-center">
-                <h2 className="text-xl font-semibold font-serif text-[#1e1b4b] mb-2">
-                  {activeTab === 'comprehensionOrale' ? 'Compréhension orale' : 'Compréhension écrite'}
-                </h2>
-                <p className="text-gray-600 text-sm mb-4">
-                  Texte : {extractShortTitle(evaluationData.titre, 8)}
-                </p>
-              </div>
+          {/* Options de source */}
+          <div className="flex gap-4 mb-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="themeSource"
+                value="cours"
+                checked={themeSource === 'cours'}
+                onChange={(e) => {
+                  setThemeSource(e.target.value as ThemeSource);
+                  const lecon = selectRandomLecon();
+                  if (lecon) setSelectedLecon(lecon);
+                }}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-gray-700">Option A — Basé sur mes cours</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="themeSource"
+                value="libre"
+                checked={themeSource === 'libre'}
+                onChange={(e) => setThemeSource(e.target.value as ThemeSource)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-gray-700">Option B — Choisir un thème libre</span>
+            </label>
+          </div>
 
-              {/* Texte à lire/écouter */}
-              <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                {activeTab === 'comprehensionOrale' && (
-                  <div className="flex gap-2 mb-4">
-                    <button
-                      onClick={() => speakText(evaluationData.texte)}
-                      disabled={isPlaying}
-                      className={`px-4 py-2 rounded-md text-white font-medium transition-colors
-                        ${isPlaying 
-                          ? 'bg-orange-400 cursor-not-allowed' 
-                          : 'bg-orange-600 hover:bg-orange-700 cursor-pointer'}
-                        flex items-center gap-2`}
-                    >
-                      {isPlaying ? (
-                        <>
-                          <span className="animate-pulse">🔊</span>
-                          Lecture en cours...
-                        </>
-                      ) : (
-                        <>
-                          <span>🔊</span>
-                          Écouter le texte
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={stopSpeaking}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                    >
-                      Arrêter
-                    </button>
-                  </div>
-                )}
-                
-                <div className="max-h-48 overflow-y-auto">
-                  <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                    {evaluationData.texte}
-                  </p>
-                </div>
-              </div>
-
-              {/* Questions */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-[#1e1b4b]">
-                  Questions ({evaluationData.questions.length})
-                </h3>
-                
-                {evaluationData.questions.map((question, index) => (
-                  <div
-                    key={index}
-                    className="bg-gray-50 rounded-lg p-4 border border-gray-200"
-                  >
-                    <p className="font-medium text-gray-800 mb-3">
-                      Question {index + 1}/{evaluationData.questions.length}
-                    </p>
-                    <p className="text-gray-700 mb-4">
-                      {question.question}
-                    </p>
-                    <div className="space-y-2">
-                      {question.choix.map((choice, choiceIndex) => (
-                        <label
-                          key={choiceIndex}
-                          className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
-                            ${answers[index] === choiceIndex 
-                              ? 'border-blue-500 bg-blue-50' 
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
-                        >
-                          <input
-                            type="radio"
-                            name={`q-${index}`}
-                            value={choiceIndex}
-                            checked={answers[index] === choiceIndex}
-                            onChange={(e) => {
-                              setAnswers(prev => ({
-                                ...prev,
-                                [index]: Number(e.target.value),
-                              }));
-                            }}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-gray-700">{choice}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Indicateur de progression */}
-              <div className="text-sm text-gray-500">
-                {Object.keys(answers).length} questions répondus sur {evaluationData.questions.length}
-              </div>
-
-              {/* Boutons */}
-              <div className="flex gap-3 pt-4">
+          {/* Option A : Basé sur mes cours */}
+          {themeSource === 'cours' && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-medium text-gray-800">Leçon sélectionnée</h3>
                 <button
                   onClick={() => {
-                    // Réécouter le texte
-                    if (activeTab === 'comprehensionOrale') {
-                      speakText(evaluationData.texte);
-                    }
+                    const lecon = selectRandomLecon();
+                    if (lecon) setSelectedLecon(lecon);
                   }}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm"
                 >
-                  {activeTab === 'comprehensionOrale' ? 'Réécouter' : 'Relire'}
+                  🔄 Choisir aléatoirement
                 </button>
-                <button
-                  onClick={correctAnswers}
-                  disabled={Object.keys(answers).length < evaluationData.questions.length || isLoading}
-                  className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
-                    ${Object.keys(answers).length === evaluationData.questions.length && !isLoading
-                      ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
-                      : 'bg-green-300 cursor-not-allowed'}`}
+              </div>
+              
+              {selectedLecon ? (
+                <div className="space-y-2">
+                  <p className="font-medium text-gray-700">
+                    {selectedLecon.titre} <span className="text-sm text-gray-500">({selectedLecon.type})</span>
+                  </p>
+                  <p className="text-sm text-gray-600 line-clamp-2">
+                    {selectedLecon.contenuTexte}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">
+                  Aucune leçon disponible. Importez un PDF via <a href="/lecons/import" className="text-blue-600 hover:underline">/lecons/import</a>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Option B : Choisir un thème libre */}
+          {themeSource === 'libre' && (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sélectionner un thème prédéfini
+                </label>
+                <select
+                  value={selectedTheme}
+                  onChange={(e) => setSelectedTheme(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  Valider mes réponses
-                </button>
+                  {predefinedThemes.map((theme) => (
+                    <option key={theme} value={theme}>{theme}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ou saisir un autre thème
+                </label>
+                <input
+                  type="text"
+                  value={customTheme}
+                  onChange={(e) => setCustomTheme(e.target.value)}
+                  placeholder="Ex: Les voyages en train, Mon animal préféré..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
               </div>
             </div>
           )}
 
-          {/* ÉTAPE 3 : CORRECTION */}
-          {step === 'correcting' && evaluationData && score !== null && (
-            <div className="space-y-6">
-              {/* Résultat global */}
-              <div className="text-center">
-                <h2 className="text-2xl font-bold font-serif mb-2">
-                  {score >= 80 ? (
-                    <span className="text-green-600">✓ Excellent travail !</span>
-                  ) : score >= 50 ? (
-                    <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
-                  ) : (
-                    <span className="text-red-600">✗ Revisez ces notions</span>
-                  )}
-                </h2>
-                <div className="text-5xl font-bold mb-2">
-                  <span className={score >= 80 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-600'}>
-                    {score}/100
-                  </span>
-                </div>
-                <p className="text-gray-600">
-                  {Math.round((score / 100) * evaluationData.questions.length)}/{evaluationData.questions.length} bonnes réponses
+          {/* Sélecteur de niveau */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Niveau CECRL
+            </label>
+            <select
+              value={niveauCECRL}
+              onChange={(e) => setNiveauCECRL(e.target.value as NiveauCECRL)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="A1">A1 - Débutant</option>
+              <option value="A2">A2 - Élémentaire</option>
+              <option value="B1">B1 - Intermédiaire</option>
+              <option value="B2">B2 - Intermédiaire avancé</option>
+              <option value="C1">C1 - Autonome</option>
+              <option value="C2">C2 - Maîtrise</option>
+            </select>
+          </div>
+
+          {/* Affichage du contexte sélectionné */}
+          {getCurrentContext().title && (
+            <div className="bg-blue-50 rounded-lg p-3">
+              <p className="text-sm text-blue-700">
+                {getCurrentContext().title}
+              </p>
+            </div>
+          )}
+
+          {/* Bouton de génération */}
+          {(themeSource === 'cours' && !selectedLecon) ? (
+            <button
+              className="w-full px-6 py-3 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed"
+              disabled
+            >
+              Veuillez importer une leçon d\'abord
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') {
+                  generateComprehensionQuestions();
+                } else if (activeTab === 'expressionEcrite') {
+                  generateExpressionSubject(false);
+                } else if (activeTab === 'expressionOrale') {
+                  generateExpressionSubject(true);
+                }
+              }}
+              disabled={isLoading}
+              className={`w-full px-6 py-3 rounded-md text-white font-medium transition-colors
+                ${!isLoading 
+                  ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
+                  : 'bg-blue-300 cursor-not-allowed'}`}
+            >
+              {isLoading ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                  Génération en cours...
+                </>
+              ) : (
+                `Générer ${activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ? 'les questions' : 'un sujet'}`
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ======================================================================
+           COMPRÉHENSION ORALE
+         ====================================================================== */}
+      {activeTab === 'comprehensionOrale' && step === 'answering' && evaluationData && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Compréhension orale
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {getCurrentContext().title}
+            </p>
+          </div>
+
+          {/* Texte à écouter */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => speakText(evaluationData.texte)}
+                disabled={isPlaying}
+                className={`px-4 py-2 rounded-md text-white font-medium transition-colors
+                  ${isPlaying 
+                    ? 'bg-orange-400 cursor-not-allowed' 
+                    : 'bg-orange-600 hover:bg-orange-700 cursor-pointer'}
+                  flex items-center gap-2`}
+              >
+                {isPlaying ? (
+                  <>
+                    <span className="animate-pulse">🔊</span>
+                    Lecture en cours...
+                  </>
+                ) : (
+                  <>
+                    <span>🔊</span>
+                    Écouter le texte
+                  </>
+                )}
+              </button>
+              <button
+                onClick={stopSpeaking}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Arrêter
+              </button>
+            </div>
+            
+            <div className="max-h-48 overflow-y-auto">
+              <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                {evaluationData.texte}
+              </p>
+            </div>
+          </div>
+
+          {/* Questions */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-[#1e1b4b]">
+              Questions ({evaluationData.questions.length})
+            </h3>
+            
+            {evaluationData.questions.map((question, index) => (
+              <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <p className="font-medium text-gray-800 mb-3">
+                  Question {index + 1}/{evaluationData.questions.length}
                 </p>
-              </div>
-
-              {/* Détails des corrections */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-4 max-h-96 overflow-y-auto">
-                <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
-                {evaluationData.questions.map((question, index) => {
-                  const userAnswer = answers[index];
-                  const isCorrect = userAnswer === question.bonneReponse;
-                  
-                  return (
-                    <div
-                      key={index}
-                      className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                <p className="text-gray-700 mb-4">{question.question}</p>
+                <div className="space-y-2">
+                  {question.choix.map((choice, choiceIndex) => (
+                    <label
+                      key={choiceIndex}
+                      className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
+                        ${answers[index] === choiceIndex 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                     >
-                      <p className="font-medium text-gray-800 mb-1">
-                        Question {index + 1}: {question.question}
-                      </p>
-                      <p className="text-sm">
-                        <span className="text-gray-600">Votre réponse:</span> 
-                        <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
-                          {userAnswer !== undefined ? question.choix[userAnswer] : 'Non répondue'}
-                        </span>
-                      </p>
-                      <p className="text-sm">
-                        <span className="text-gray-600">Réponse correcte:</span> 
-                        <span className="text-green-700 font-medium">{question.choix[question.bonneReponse]}</span>
-                      </p>
-                      {question.explication && (
-                        <p className="text-xs text-gray-500 mt-1">{question.explication}</p>
-                      )}
-                    </div>
-                  );
-                })}
+                      <input
+                        type="radio"
+                        name={`q-${index}`}
+                        value={choiceIndex}
+                        checked={answers[index] === choiceIndex}
+                        onChange={(e) => {
+                          setAnswers(prev => ({
+                            ...prev,
+                            [index]: Number(e.target.value),
+                          }));
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-700">{choice}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
+            ))}
+          </div>
 
-              {/* Bouton pour revenir */}
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => speakText(evaluationData.texte)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            >
+              Réécouter
+            </button>
+            <button
+              onClick={correctComprehensionAnswers}
+              disabled={Object.keys(answers).length < evaluationData.questions.length}
+              className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
+                ${Object.keys(answers).length === evaluationData.questions.length
+                  ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
+                  : 'bg-green-300 cursor-not-allowed'}`}
+            >
+              Valider mes réponses
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================
+           COMPRÉHENSION ÉCRITE
+         ====================================================================== */}
+      {activeTab === 'comprehensionEcrite' && step === 'answering' && evaluationData && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Compréhension écrite
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {getCurrentContext().title}
+            </p>
+          </div>
+
+          {/* Texte à lire */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <div className="max-h-48 overflow-y-auto">
+              <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                {evaluationData.texte}
+              </p>
+            </div>
+          </div>
+
+          {/* Questions */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-[#1e1b4b]">
+              Questions ({evaluationData.questions.length})
+            </h3>
+            
+            {evaluationData.questions.map((question, index) => (
+              <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <p className="font-medium text-gray-800 mb-3">
+                  Question {index + 1}/{evaluationData.questions.length}
+                </p>
+                <p className="text-gray-700 mb-4">{question.question}</p>
+                <div className="space-y-2">
+                  {question.choix.map((choice, choiceIndex) => (
+                    <label
+                      key={choiceIndex}
+                      className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
+                        ${answers[index] === choiceIndex 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      <input
+                        type="radio"
+                        name={`q-${index}`}
+                        value={choiceIndex}
+                        checked={answers[index] === choiceIndex}
+                        onChange={(e) => {
+                          setAnswers(prev => ({
+                            ...prev,
+                            [index]: Number(e.target.value),
+                          }));
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-700">{choice}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => setStep('setup')}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            >
+              Changer de thème
+            </button>
+            <button
+              onClick={correctComprehensionAnswers}
+              disabled={Object.keys(answers).length < evaluationData.questions.length}
+              className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
+                ${Object.keys(answers).length === evaluationData.questions.length
+                  ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
+                  : 'bg-green-300 cursor-not-allowed'}`}
+            >
+              Valider mes réponses
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================
+           EXPRESSION ÉCRITE
+         ====================================================================== */}
+      {activeTab === 'expressionEcrite' && step === 'answering' && expressionSubject && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Expression écrite
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {getCurrentContext().title}
+            </p>
+          </div>
+
+          {/* Sujet */}
+          <div className="bg-purple-50 rounded-lg p-4 mb-6">
+            <h3 className="font-medium text-purple-800 mb-2">Sujet</h3>
+            <p className="text-purple-700 mb-3">{expressionSubject.subject}</p>
+            <p className="text-sm text-purple-600">{expressionSubject.instructions}</p>
+          </div>
+
+          {/* Zone de saisie */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Votre texte (100-150 mots recommandés)
+            </label>
+            <textarea
+              value={writtenAnswer}
+              onChange={(e) => setWrittenAnswer(e.target.value)}
+              placeholder="Rédigez votre texte en allemand ici..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[200px]"
+              rows={10}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {writtenAnswer.length} caractères
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => setStep('setup')}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            >
+              Changer de sujet
+            </button>
+            <button
+              onClick={correctWrittenExpression}
+              disabled={!writtenAnswer.trim() || isLoading}
+              className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
+                ${writtenAnswer.trim() && !isLoading
+                  ? 'bg-purple-600 hover:bg-purple-700 cursor-pointer'
+                  : 'bg-purple-300 cursor-not-allowed'}`}
+            >
+              {isLoading ? 'Correction en cours...' : 'Soumettre pour correction'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================
+           EXPRESSION ORALE
+         ====================================================================== */}
+      {activeTab === 'expressionOrale' && step === 'answering' && oralSubject && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Expression orale
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {getCurrentContext().title}
+            </p>
+          </div>
+
+          {/* Sujet */}
+          <div className="bg-green-50 rounded-lg p-4 mb-6">
+            <h3 className="font-medium text-green-800 mb-2">Sujet</h3>
+            <p className="text-green-700 mb-3">{oralSubject.subject}</p>
+            <p className="text-sm text-green-600">{oralSubject.instructions}</p>
+          </div>
+
+          {/* Enregistrement */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-medium text-gray-800 mb-3">Enregistrement</h3>
+            
+            {!isRecording ? (
               <button
                 onClick={() => {
-                  setStep('reading');
-                  setEvaluationData(null);
-                  setAnswers({});
-                  setScore(null);
+                  startRecording();
+                  (window as any).currentRecognition = true;
                 }}
-                className="w-full px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                className="w-full px-6 py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-lg"
               >
-                Faire une autre évaluation
+                🎤 Commencer l\'enregistrement
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    stopRecording();
+                    delete (window as any).currentRecognition;
+                  }}
+                  className="w-full px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                >
+                  ⏹ Arrêter l\'enregistrement
+                </button>
+                <div className="bg-white rounded-md p-3">
+                  <p className="text-sm font-medium text-gray-700 mb-1">Transcription :</p>
+                  <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'Parlez...'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Soumission */}
+          {transcript.trim() && !isRecording && (
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => {
+                  startRecording();
+                  (window as any).currentRecognition = true;
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+              >
+                Recommencer
+              </button>
+              <button
+                onClick={correctOralExpression}
+                disabled={isLoading}
+                className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
+                  ${!isLoading
+                    ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
+                    : 'bg-green-300 cursor-not-allowed'}`}
+              >
+                {isLoading ? 'Correction en cours...' : 'Soumettre pour correction'}
               </button>
             </div>
           )}
@@ -648,9 +1339,136 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
       )}
 
       {/* ======================================================================
-           AUTRES ONGLETS (Placeholder)
+           CORRECTION (tous les types)
          ====================================================================== */}
-      {(activeTab === 'expressionEcrite' || activeTab === 'expressionOrale' || activeTab === 'testGlobal') && (
+      {step === 'correcting' && score !== null && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
+          {/* Résultat global */}
+          <div className="text-center">
+            <h2 className="text-2xl font-bold font-serif mb-2">
+              {score >= 80 ? (
+                <span className="text-green-600">✓ Excellent travail !</span>
+              ) : score >= 50 ? (
+                <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+              ) : (
+                <span className="text-red-600">✗ Revisez ces notions</span>
+              )}
+            </h2>
+            <div className="text-5xl font-bold mb-2">
+              <span className={score >= 80 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                {score}/100
+              </span>
+            </div>
+            <p className="text-gray-600">
+              {activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ?
+                `${Math.round((score / 100) * (evaluationData?.questions.length || 5))}/${evaluationData?.questions.length || 5} bonnes réponses` :
+                `Score global`}
+            </p>
+          </div>
+
+          {/* Détails selon le type */}
+          
+          {/* Correction Compréhension */}
+          {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && evaluationData && (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-4 max-h-96 overflow-y-auto">
+              <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
+              {evaluationData.questions.map((question, index) => {
+                const userAnswer = answers[index];
+                const isCorrect = userAnswer === question.bonneReponse;
+                
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                  >
+                    <p className="font-medium text-gray-800 mb-1">
+                      Question {index + 1}: {question.question}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Votre réponse:</span> 
+                      <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
+                        {userAnswer !== undefined ? question.choix[userAnswer] : 'Non répondue'}
+                      </span>
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Réponse correcte:</span> 
+                      <span className="text-green-700 font-medium">{question.choix[question.bonneReponse]}</span>
+                    </p>
+                    {question.explication && (
+                      <p className="text-xs text-gray-500 mt-1">{question.explication}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Correction Expression Écrite */}
+          {activeTab === 'expressionEcrite' && writtenCorrection && (
+            <div className="bg-purple-50 rounded-lg p-4 space-y-4">
+              <h3 className="font-medium text-purple-800 mb-3">Correction détaillée</h3>
+              
+              <div className="space-y-3">
+                <div>
+                  <h4 className="font-medium text-purple-700">Grammaire</h4>
+                  <p className="text-sm text-purple-600">{writtenCorrection.grammaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-purple-700">Vocabulaire</h4>
+                  <p className="text-sm text-purple-600">{writtenCorrection.vocabulaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-purple-700">Structure</h4>
+                  <p className="text-sm text-purple-600">{writtenCorrection.structure || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-purple-700">Conseils</h4>
+                  <p className="text-sm text-purple-600">{writtenCorrection.conseils || 'Aucun commentaire'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Correction Expression Orale */}
+          {activeTab === 'expressionOrale' && oralCorrection && (
+            <div className="bg-green-50 rounded-lg p-4 space-y-4">
+              <h3 className="font-medium text-green-800 mb-3">Correction détaillée</h3>
+              
+              <div className="space-y-3">
+                <div>
+                  <h4 className="font-medium text-green-700">Prononciation</h4>
+                  <p className="text-sm text-green-600">{oralCorrection.prononciation || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-green-700">Grammaire</h4>
+                  <p className="text-sm text-green-600">{oralCorrection.grammaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-green-700">Vocabulaire</h4>
+                  <p className="text-sm text-green-600">{oralCorrection.vocabulaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-green-700">Conseils</h4>
+                  <p className="text-sm text-green-600">{oralCorrection.conseils || 'Aucun commentaire'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bouton pour revenir */}
+          <button
+            onClick={() => setStep('setup')}
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+          >
+            Faire une autre évaluation
+          </button>
+        </div>
+      )}
+
+      {/* ======================================================================
+           TEST GLOBAL (Placeholder)
+         ====================================================================== */}
+      {activeTab === 'testGlobal' && (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
           <div className="text-6xl mb-4">{tabs.find(t => t.id === activeTab)?.icon}</div>
           <h2 className="text-2xl font-bold font-serif text-[#1e1b4b] mb-4">
@@ -660,7 +1478,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
             {tabs.find(t => t.id === activeTab)?.description}
           </p>
           <p className="text-sm text-gray-500">
-            Ce contenu sera développé dans les prochaines étapes
+            Ce contenu sera développé dans une prochaine étape
           </p>
         </div>
       )}
