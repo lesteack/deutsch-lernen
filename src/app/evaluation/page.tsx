@@ -20,13 +20,25 @@ import { predefinedThemes } from '@/lib/themes';
 
 type EvaluationTab = 'comprehensionOrale' | 'comprehensionEcrite' | 'expressionEcrite' | 'expressionOrale' | 'testGlobal';
 
-/** Type pour une question de compréhension */
-interface ComprehensionQuestion {
+/** Type pour une question QCM */
+interface QCMQuestion {
+  type: 'qcm';
   question: string;
   choix: string[]; // 4 choix
   bonneReponse: number; // index de la bonne réponse (0-3)
   explication: string;
 }
+
+/** Type pour une question de production écrite */
+interface ProductionQuestion {
+  type: 'production';
+  question: string;
+  consigne: string;
+  correctionCriteres: string[];
+}
+
+/** Type union pour les questions de compréhension */
+type ComprehensionQuestion = QCMQuestion | ProductionQuestion;
 
 /** Type pour le texte généré par Mistral */
 interface GeneratedText {
@@ -39,6 +51,12 @@ interface GeneratedText {
 interface ComprehensionEvaluation {
   generatedText: GeneratedText;
   questions: ComprehensionQuestion[];
+}
+
+/** Type pour les réponses utilisateur (mix QCM et production) */
+interface UserAnswers {
+  qcm?: Record<number, number>; // index question -> index réponse
+  production?: Record<number, string>; // index question -> texte réponse
 }
 
 /** Type pour un sujet d'expression écrite/orale */
@@ -65,6 +83,15 @@ interface OralCorrection {
   prononciation: string;
   grammaire: string;
   vocabulaire: string;
+  conseils: string;
+}
+
+/** Type pour la correction d'une réponse de production (CO/CE) */
+interface ProductionAnswerCorrection {
+  score: number;
+  comprehension: string;
+  vocabulaire: string;
+  grammaire: string;
   conseils: string;
 }
 
@@ -137,10 +164,14 @@ export default function EvaluationPage() {
   const [generatedText, setGeneratedText] = useState<GeneratedText | null>(null);
   const [evaluationData, setEvaluationData] = useState<ComprehensionEvaluation | null>(null);
   const [step, setStep] = useState<EvaluationStep>('setup');
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [answers, setAnswers] = useState<UserAnswers>({});
   const [score, setScore] = useState<number | null>(null);
   const [showText, setShowText] = useState(false);
   const [vocabularyTranslations, setVocabularyTranslations] = useState<Record<string, string>>({});
+  
+  // État pour les réponses rédigées en CO (compréhension orale)
+  const [oralComprehensionAnswer, setOralComprehensionAnswer] = useState<string>('');
+  const [isRecordingComprehension, setIsRecordingComprehension] = useState(false);
   
   // État pour l'expression écrite
   const [expressionSubject, setExpressionSubject] = useState<ExpressionSubject | null>(null);
@@ -152,6 +183,9 @@ export default function EvaluationPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState<string>('');
   const [oralCorrection, setOralCorrection] = useState<OralCorrection | null>(null);
+  
+  // État pour la correction des réponses de production (CO/CE)
+  const [productionCorrection, setProductionCorrection] = useState<ProductionAnswerCorrection | null>(null);
   
   // État UI
   const [isLoading, setIsLoading] = useState(false);
@@ -400,6 +434,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
   /**
    * Génère des questions de compréhension via Mistral
+   * 2 questions QCM + 3 questions de production écrite
    */
   const generateQuestions = useCallback(async () => {
     if (!generatedText) return;
@@ -416,26 +451,60 @@ Texte: ${generatedText.texte}
 Niveau: ${niveauCECRL}
 ---
 
-Chaque question doit avoir :
-- Une question claire en allemand (basée sur le contenu du texte)
-- 4 choix de réponse (1 correcte, 3 incorrectes mais plausibles)
-- La bonne réponse indiquée par son INDEX (0, 1, 2 ou 3)
-- Une explication pédagogique en français
+Le JSON doit contenir EXACTEMENT 2 questions QCM et 3 questions de production écrite.
 
-Réponds avec UN SEUL objet JSON contenant UN tableau "questions" avec EXACTEMENT 5 éléments :
+Pour les questions QCM :
+- type: "qcm"
+- question: question claire en allemand
+- choix: 4 réponses (1 correcte, 3 incorrectes mais plausibles)
+- bonneReponse: index (0, 1, 2 ou 3)
+- explication: explication en français
+
+Pour les questions de production :
+- type: "production"
+- question: question en allemand
+- consigne: consigne en allemand (ex: "Répondez en allemand en 2-3 phrases.")
+- correctionCriteres: ["compréhension", "vocabulaire"]
+
+Réponds avec UN SEUL objet JSON :
 {
   "questions": [
     {
+      "type": "qcm",
       "question": "[question en allemand]",
       "choix": ["choix A", "choix B", "choix C", "choix D"],
       "bonneReponse": 0,
       "explication": "[explication en français]"
     },
-    ... (4 autres questions)
+    {
+      "type": "qcm",
+      "question": "[question en allemand]",
+      "choix": ["choix A", "choix B", "choix C", "choix D"],
+      "bonneReponse": 2,
+      "explication": "[explication en français]"
+    },
+    {
+      "type": "production",
+      "question": "[question en allemand]",
+      "consigne": "Répondez en allemand en 2-3 phrases.",
+      "correctionCriteres": ["compréhension", "vocabulaire"]
+    },
+    {
+      "type": "production",
+      "question": "[question en allemand]",
+      "consigne": "Répondez en allemand en 2-3 phrases.",
+      "correctionCriteres": ["compréhension", "vocabulaire"]
+    },
+    {
+      "type": "production",
+      "question": "[question en allemand]",
+      "consigne": "Répondez en allemand en 2-3 phrases.",
+      "correctionCriteres": ["expression", "vocabulaire"]
+    }
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tableau doit contenir EXACTEMENT 5 questions.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 5 questions (2 QCM + 3 production).`;
 
       const response = await fetch('/api/mistral', {
         method: 'POST',
@@ -462,16 +531,33 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
 
       // Valider chaque question
       const validQuestions: ComprehensionQuestion[] = data.questions.map((q: any, index: number) => {
-        if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
-            q.bonneReponse === undefined || q.bonneReponse === null) {
-          throw new Error(`Question ${index + 1} invalide`);
+        if (q.type === 'qcm') {
+          if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
+              q.bonneReponse === undefined || q.bonneReponse === null) {
+            throw new Error(`Question QCM ${index + 1} invalide`);
+          }
+          return {
+            type: 'qcm',
+            question: String(q.question),
+            choix: q.choix.map((c: any) => String(c)),
+            bonneReponse: Number(q.bonneReponse),
+            explication: String(q.explication || ''),
+          };
+        } else if (q.type === 'production') {
+          if (!q.question || !q.consigne) {
+            throw new Error(`Question production ${index + 1} invalide`);
+          }
+          return {
+            type: 'production',
+            question: String(q.question),
+            consigne: String(q.consigne),
+            correctionCriteres: Array.isArray(q.correctionCriteres) 
+              ? q.correctionCriteres.map(String) 
+              : [],
+          };
+        } else {
+          throw new Error(`Type de question invalide: ${q.type}`);
         }
-        return {
-          question: String(q.question),
-          choix: q.choix.map((c: any) => String(c)),
-          bonneReponse: Number(q.bonneReponse),
-          explication: String(q.explication || ''),
-        };
       });
 
       setEvaluationData({
@@ -691,30 +777,195 @@ IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans 
   // ==========================================================================
 
   /**
-   * Corrige les réponses de compréhension
+   * Corrige les réponses de compréhension (mix QCM + production)
    */
-  const correctComprehensionAnswers = useCallback(() => {
+  const correctComprehensionAnswers = useCallback(async () => {
     if (!evaluationData) return;
 
-    let correctCount = 0;
+    setIsLoading(true);
+    setError(null);
 
-    for (let i = 0; i < evaluationData.questions.length; i++) {
-      const question = evaluationData.questions[i];
-      const userAnswer = answers[i];
-      const isCorrect = userAnswer === question.bonneReponse;
+    try {
+      // Compter les bonnes réponses QCM
+      let correctCount = 0;
+      let qcmCount = 0;
       
-      if (isCorrect) {
-        correctCount++;
+      for (let i = 0; i < evaluationData.questions.length; i++) {
+        const question = evaluationData.questions[i];
+        if (question.type === 'qcm') {
+          qcmCount++;
+          const userAnswer = answers.qcm?.[i];
+          if (userAnswer !== undefined && userAnswer === question.bonneReponse) {
+            correctCount++;
+          }
+        }
       }
+
+      // Corriger les questions de production avec Mistral
+      const productionQuestions = evaluationData.questions.filter(q => q.type === 'production');
+      let productionScore = 0;
+      const productionCorrections: Record<number, ProductionAnswerCorrection> = {};
+      
+      for (const [indexStr, answerText] of Object.entries(answers.production || {})) {
+        const index = parseInt(indexStr);
+        const question = evaluationData.questions[index];
+        if (question && question.type === 'production' && answerText) {
+          const correction = await correctProductionAnswer(answerText, question, niveauCECRL);
+          productionCorrections[index] = correction;
+          productionScore += correction.score;
+        }
+      }
+
+      // Score final : moyenne entre QCM et production
+      const totalQuestions = evaluationData.questions.length;
+      const productionCount = productionQuestions.length;
+      const averageProductionScore = productionCount > 0 ? productionScore / productionCount : 0;
+      
+      const qcmScore = qcmCount > 0 ? (correctCount / qcmCount) * 100 : 0;
+      const finalScore = Math.round((qcmScore * (qcmCount / totalQuestions)) + 
+                                     (averageProductionScore * (productionCount / totalQuestions)));
+      
+      setScore(finalScore);
+      setProductionCorrection(null); // Reset pour éviter les conflits
+      setStep('correcting');
+
+      // Sauvegarder l'évaluation
+      saveEvaluation(finalScore, activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite');
+      
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [evaluationData, answers, activeTab, niveauCECRL]);
+
+  /**
+   * Corrige la réponse de compréhension orale (réponse rédigée) via Mistral
+   */
+  const correctComprehensionProduction = useCallback(async (answer: string, text: string, niveau: NiveauCECRL): Promise<ProductionAnswerCorrection> => {
+    const prompt = `Tu es un professeur d'allemand. Corrige cette réponse de compréhension orale écrite par un élève de niveau ${niveau}.
+
+---
+Texte original: ${text}
+Réponse de l'élève: ${answer}
+Niveau: ${niveau}
+---
+
+Évalue la réponse par rapport au texte original.
+
+Fais une correction détaillée avec :
+- Un score sur 100 (basé sur la compréhension, le vocabulaire et la grammaire)
+- Des commentaires sur ce qui a été compris
+- Des commentaires sur le vocabulaire utilisé
+- Des commentaires sur la grammaire
+- Des conseils pour progresser
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "comprehension": "[commentaires sur la compréhension en français]",
+  "vocabulaire": "[commentaires sur le vocabulaire en français]",
+  "grammaire": "[commentaires sur la grammaire en français]",
+  "conseils": "[conseils en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+    const response = await fetch('/api/mistral', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        responseFormat: 'json_object',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erreur lors de la correction');
     }
 
-    const finalScore = Math.round((correctCount / evaluationData.questions.length) * 100);
-    setScore(finalScore);
-    setStep('correcting');
+    const data = await response.json();
+    
+    if (!data.score || data.score < 0 || data.score > 100) {
+      throw new Error('Score invalide');
+    }
 
-    // Sauvegarder l'évaluation
-    saveEvaluation(finalScore, activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite');
-  }, [evaluationData, answers, activeTab]);
+    return {
+      score: Number(data.score),
+      comprehension: String(data.comprehension || ''),
+      vocabulaire: String(data.vocabulaire || ''),
+      grammaire: String(data.grammaire || ''),
+      conseils: String(data.conseils || ''),
+    };
+  }, []);
+
+  /**
+   * Corrige une réponse de production via Mistral
+   */
+  const correctProductionAnswer = useCallback(async (answer: string, question: ProductionQuestion, niveau: NiveauCECRL): Promise<ProductionAnswerCorrection> => {
+    const prompt = `Tu es un professeur d'allemand. Corrige cette réponse écrite par un élève de niveau ${niveau}.
+
+---
+Question: ${question.question}
+Consigne: ${question.consigne}
+Réponse de l'élève: ${answer}
+Niveau: ${niveau}
+Critères à évaluer: ${question.correctionCriteres.join(', ')}
+---
+
+Fais une correction détaillée avec :
+- Un score sur 100
+- Des commentaires sur la compréhension du texte
+- Des commentaires sur le vocabulaire utilisé
+- Des commentaires sur la grammaire
+- Des conseils pour progresser
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "comprehension": "[commentaires sur la compréhension en français]",
+  "vocabulaire": "[commentaires sur le vocabulaire en français]",
+  "grammaire": "[commentaires sur la grammaire en français]",
+  "conseils": "[conseils en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+    const response = await fetch('/api/mistral', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        responseFormat: 'json_object',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erreur lors de la correction');
+    }
+
+    const data = await response.json();
+    
+    if (!data.score || data.score < 0 || data.score > 100) {
+      throw new Error('Score invalide');
+    }
+
+    return {
+      score: Number(data.score),
+      comprehension: String(data.comprehension || ''),
+      vocabulaire: String(data.vocabulaire || ''),
+      grammaire: String(data.grammaire || ''),
+      conseils: String(data.conseils || ''),
+    };
+  }, []);
 
   /**
    * Corrige l'expression écrite
@@ -1128,19 +1379,19 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       )}
 
       {/* ======================================================================
-           COMPRÉHENSION ORALE
+           COMPRÉHENSION ORALE - Réponse rédigée
          ====================================================================== */}
-      {activeTab === 'comprehensionOrale' && step === 'answering' && generatedText && !evaluationData && (
+      {activeTab === 'comprehensionOrale' && step === 'answering' && generatedText && (
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
-              Compréhension orale
+              Hörverstehen
             </h2>
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
             </p>
             <p className="text-xs text-gray-500">
-              Un texte a été généré. Écoutez-le attentivement.
+              Ein Text wurde generiert. Hören Sie ihn aufmerksam an.
             </p>
           </div>
 
@@ -1159,12 +1410,12 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 {isPlaying ? (
                   <>
                     <span className="animate-pulse">🔊</span>
-                    Lecture en cours...
+                    Wird abgespielt...
                   </>
                 ) : (
                   <>
                     <span>🔊</span>
-                    Écouter le texte
+                    Text anhören
                   </>
                 )}
               </button>
@@ -1173,13 +1424,13 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center gap-2"
               >
                 {showText ? '🙈' : '👁'}
-                {showText ? ' Cacher le texte' : ' Voir le texte'}
+                {showText ? ' Text ausblenden' : ' Text anzeigen'}
               </button>
               <button
                 onClick={stopSpeaking}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
               >
-                Arrêter
+                Stop
               </button>
             </div>
             
@@ -1193,30 +1444,153 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             
             {!showText && (
               <div className="text-center py-8 text-gray-400">
-                <p>Le texte est caché. Écoutez-le attentivement avant de répondre.</p>
-                <p className="text-xs mt-2">Vous pourrez le voir après avoir écouté.</p>
+                <p>Der Text ist versteckt. Hören Sie ihn aufmerksam an, bevor Sie antworten.</p>
+                <p className="text-xs mt-2">Sie können ihn nach dem Anhören einblenden.</p>
               </div>
             )}
           </div>
 
-          {/* Bouton pour générer les questions */}
-          <button
-            onClick={generateQuestions}
-            disabled={isLoading}
-            className={`w-full px-6 py-3 rounded-md text-white font-medium transition-colors
-              ${!isLoading 
-                ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
-                : 'bg-blue-300 cursor-not-allowed'}`}
-          >
-            {isLoading ? (
-              <>
-                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
-                Génération des questions...
-              </>
-            ) : (
-              'Générer les questions de compréhension'
-            )}
-          </button>
+          {/* Question ouverte unique pour CO */}
+          <div className="bg-orange-50 rounded-lg p-4 mb-6">
+            <h3 className="font-medium text-orange-800 mb-3">Frage</h3>
+            <p className="text-orange-700 text-lg">
+              Was haben Sie verstanden? Fassen Sie den Text auf Deutsch zusammen.
+            </p>
+            <p className="text-sm text-orange-600 mt-1">
+              (Qu'avez-vous compris ? Résumez le texte en allemand.)
+            </p>
+          </div>
+
+          {/* Zone de réponse */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Ihre Antwort
+            </label>
+            <textarea
+              value={oralComprehensionAnswer}
+              onChange={(e) => setOralComprehensionAnswer(e.target.value)}
+              placeholder="Schreiben Sie hier auf Deutsch was Sie verstanden haben..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 min-h-[150px]"
+              rows={6}
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+                    if (SpeechRecognitionAPI) {
+                      setIsRecordingComprehension(true);
+                      const recognition = new SpeechRecognitionAPI();
+                      recognition.lang = 'de-DE';
+                      recognition.interimResults = true;
+                      recognition.continuous = false;
+
+                      recognition.onstart = () => setIsRecordingComprehension(true);
+                      recognition.onend = () => setIsRecordingComprehension(false);
+                      recognition.onerror = (event: any) => {
+                        setIsRecordingComprehension(false);
+                        setError(`Erreur de reconnaissance vocale : ${event.error}`);
+                      };
+
+                      let finalTranscript = '';
+                      recognition.onresult = (event: any) => {
+                        for (let i = event.resultIndex; i < event.results.length; i++) {
+                          const transcript = event.results[i][0].transcript;
+                          if (event.results[i].isFinal) {
+                            finalTranscript += transcript + ' ';
+                          }
+                        }
+                        setOralComprehensionAnswer(prev => prev + finalTranscript);
+                      };
+
+                      recognition.start();
+                      (window as any).currentComprehensionRecognition = recognition;
+                    } else {
+                      setError('La reconnaissance vocale n\'est pas supportée par votre navigateur');
+                    }
+                  }
+                }}
+                disabled={isRecordingComprehension}
+                className={`px-4 py-2 rounded-md text-white font-medium transition-colors flex items-center gap-2
+                  ${isRecordingComprehension ? 'bg-green-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 cursor-pointer'}`}
+              >
+                {isRecordingComprehension ? (
+                  <>
+                    <span className="animate-pulse">🎤</span>
+                    Aufnahme läuft...
+                  </>
+                ) : (
+                  <>
+                    <span>🎤</span>
+                    Mikrofon
+                  </>
+                )}
+              </button>
+              {isRecordingComprehension && (
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && (window as any).currentComprehensionRecognition) {
+                      (window as any).currentComprehensionRecognition.stop();
+                      setIsRecordingComprehension(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  Stop
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {oralComprehensionAnswer.length} Zeichen
+            </p>
+          </div>
+
+          {/* Boutons */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => speakText(generatedText.texte)}
+              disabled={isPlaying}
+              className="px-4 py-2 bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 transition-colors flex items-center gap-2"
+            >
+              {isPlaying ? 'Wird abgespielt...' : '🔊 Nochmal anhören'}
+            </button>
+            <button
+              onClick={async () => {
+                if (!oralComprehensionAnswer.trim()) {
+                  setError('Bitte geben Sie eine Antwort ein');
+                  return;
+                }
+                setIsLoading(true);
+                setError(null);
+                try {
+                  // Corriger la réponse avec Mistral
+                  const correction = await correctComprehensionProduction(oralComprehensionAnswer, generatedText.texte, niveauCECRL);
+                  setProductionCorrection(correction);
+                  setScore(correction.score);
+                  setStep('correcting');
+                  saveEvaluation(correction.score, 'comprehensionOrale');
+                } catch (err) {
+                  const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+                  setError(`Impossible de corriger : ${errorMessage}`);
+                }
+                setIsLoading(false);
+              }}
+              disabled={!oralComprehensionAnswer.trim() || isLoading}
+              className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
+                ${oralComprehensionAnswer.trim() && !isLoading
+                  ? 'bg-orange-600 hover:bg-orange-700 cursor-pointer'
+                  : 'bg-orange-300 cursor-not-allowed'}`}
+            >
+              {isLoading ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                  Korrektur läuft...
+                </>
+              ) : (
+                'Antwort überprüfen'
+              )}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1268,147 +1642,125 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       )}
 
       {/* ======================================================================
-           COMPRÉHENSION ORALE/ÉCRITE - QUESTIONS
+           COMPRÉHENSION ÉCRITE - QUESTIONS (2 QCM + 3 production)
          ====================================================================== */}
-      {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && 
+      {activeTab === 'comprehensionEcrite' && 
        step === 'answering' && evaluationData && (
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
-              Questions de compréhension
+              Fragen zum Textverständnis
             </h2>
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
             </p>
           </div>
 
-          {/* Texte (visible pour CE, masquable pour CO) */}
-          {activeTab === 'comprehensionOrale' && (
-            <div className="bg-orange-50 rounded-lg p-4 mb-6">
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => speakText(evaluationData.generatedText.texte)}
-                  disabled={isPlaying}
-                  className={`px-4 py-2 rounded-md text-white font-medium transition-colors
-                    ${isPlaying 
-                      ? 'bg-orange-400 cursor-not-allowed' 
-                      : 'bg-orange-600 hover:bg-orange-700 cursor-pointer'}
-                    flex items-center gap-2`}
-                >
-                  {isPlaying ? (
-                    <>
-                      <span className="animate-pulse">🔊</span>
-                      Lecture...
-                    </>
-                  ) : (
-                    <>
-                      <span>🔊</span>
-                      Réécouter
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowText(!showText)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center gap-2"
-                >
-                  {showText ? '🙈' : '👁'}
-                  {showText ? ' Cacher' : ' Voir le texte'}
-                </button>
-              </div>
-              
-              {showText && (
-                <div className="max-h-48 overflow-y-auto bg-white p-3 rounded-md">
-                  <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                    {evaluationData.generatedText.texte}
-                  </p>
-                </div>
-              )}
-              
-              {!showText && (
-                <div className="text-center py-4 text-gray-400">
-                  <p>Le texte est caché. Utilisez le bouton ci-dessus pour le voir.</p>
-                </div>
-              )}
+          {/* Texte visible */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <div className="max-h-48 overflow-y-auto">
+              <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                {evaluationData.generatedText.texte}
+              </p>
             </div>
-          )}
+          </div>
 
-          {activeTab === 'comprehensionEcrite' && (
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <div className="max-h-48 overflow-y-auto">
-                <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                  {evaluationData.generatedText.texte}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Questions */}
+          {/* Questions (mix QCM + production) */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-[#1e1b4b]">
-              Questions ({evaluationData.questions.length})
+              Fragen ({evaluationData.questions.length})
             </h3>
             
             {evaluationData.questions.map((question, index) => (
               <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <p className="font-medium text-gray-800 mb-3">
-                  Question {index + 1}/{evaluationData.questions.length}
+                  Frage {index + 1}/{evaluationData.questions.length}
                 </p>
                 <p className="text-gray-700 mb-4">{question.question}</p>
-                <div className="space-y-2">
-                  {question.choix.map((choice, choiceIndex) => (
-                    <label
-                      key={choiceIndex}
-                      className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
-                        ${answers[index] === choiceIndex 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${index}`}
-                        value={choiceIndex}
-                        checked={answers[index] === choiceIndex}
-                        onChange={(e) => {
-                          setAnswers(prev => ({
-                            ...prev,
-                            [index]: Number(e.target.value),
-                          }));
-                        }}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-gray-700">{choice}</span>
-                    </label>
-                  ))}
-                </div>
+                
+                {question.type === 'qcm' && (
+                  <div className="space-y-2">
+                    {question.choix.map((choice, choiceIndex) => (
+                      <label
+                        key={choiceIndex}
+                        className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
+                          ${answers.qcm?.[index] === choiceIndex 
+                            ? 'border-blue-500 bg-blue-50' 
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                      >
+                        <input
+                          type="radio"
+                          name={`qcm-${index}`}
+                          value={choiceIndex}
+                          checked={answers.qcm?.[index] === choiceIndex}
+                          onChange={(e) => {
+                            setAnswers(prev => ({
+                              ...prev,
+                              qcm: {
+                                ...prev.qcm,
+                                [index]: Number(e.target.value),
+                              },
+                            }));
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700">{choice}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                
+                {question.type === 'production' && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-600">{question.consigne}</p>
+                    <textarea
+                      value={answers.production?.[index] || ''}
+                      onChange={(e) => {
+                        setAnswers(prev => ({
+                          ...prev,
+                          production: {
+                            ...prev.production,
+                            [index]: e.target.value,
+                          },
+                        }));
+                      }}
+                      placeholder="Schreiben Sie Ihre Antwort hier auf Deutsch..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
           {/* Indicateur de progression */}
           <div className="text-sm text-gray-500">
-            {Object.keys(answers).length} questions répondus sur {evaluationData.questions.length}
+            {Object.keys(answers.qcm || {}).length} QCM beantwortet, 
+            {Object.keys(answers.production || {}).length} Produktionsfragen beantwortet
           </div>
 
           {/* Boutons */}
           <div className="flex gap-3 pt-4">
-            {activeTab === 'comprehensionOrale' && (
-              <button
-                onClick={() => speakText(evaluationData.generatedText.texte)}
-                disabled={isPlaying}
-                className="px-4 py-2 bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 transition-colors"
-              >
-                {isPlaying ? 'Lecture...' : '🔊 Réécouter'}
-              </button>
-            )}
             <button
               onClick={correctComprehensionAnswers}
-              disabled={Object.keys(answers).length < evaluationData.questions.length}
+              disabled={(
+                Object.keys(answers.qcm || {}).length < 2 || 
+                Object.keys(answers.production || {}).length < 3
+              )}
               className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
-                ${Object.keys(answers).length === evaluationData.questions.length
-                  ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
-                  : 'bg-green-300 cursor-not-allowed'}`}
+                ${(Object.keys(answers.qcm || {}).length >= 2 && Object.keys(answers.production || {}).length >= 3)
+                  ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                  : 'bg-blue-300 cursor-not-allowed'}`}
             >
-              Valider mes réponses
+              {isLoading ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                  Korrektur läuft...
+                </>
+              ) : (
+                'Antworten überprüfen'
+              )}
             </button>
           </div>
         </div>
@@ -1606,19 +1958,24 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               </span>
             </div>
             <p className="text-gray-600">
-              {activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ?
+              {activeTab === 'comprehensionOrale' ?
+                `Score global` :
+                activeTab === 'comprehensionEcrite' ?
                 `${Math.round((score / 100) * (evaluationData?.questions.length || 5))}/${evaluationData?.questions.length || 5} bonnes réponses` :
                 `Score global`}
             </p>
           </div>
 
           {/* Vocabulaire clé (pour CO/CE) */}
-          {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && 
-           evaluationData && evaluationData.generatedText.vocabulaireCle.length > 0 && (
+          {((activeTab === 'comprehensionOrale' && generatedText) || 
+            (activeTab === 'comprehensionEcrite' && evaluationData)) && 
+           (generatedText?.vocabulaireCle.length || 0) > 0 && (
             <div className="bg-yellow-50 rounded-lg p-4">
-              <h3 className="font-medium text-yellow-800 mb-3">Vocabulaire clé du texte</h3>
+              <h3 className="font-medium text-yellow-800 mb-3">
+                {activeTab === 'comprehensionOrale' ? 'Schlüsselwörter des Textes' : 'Vocabulaire clé du texte'}
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {evaluationData.generatedText.vocabulaireCle.map((word, index) => (
+                {(activeTab === 'comprehensionOrale' ? generatedText!.vocabulaireCle : evaluationData!.generatedText.vocabulaireCle).map((word, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <span className="font-medium text-gray-700">{word}</span>
                     <span className="text-gray-500">—</span>
@@ -1631,39 +1988,94 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             </div>
           )}
 
+          {/* Afficher le texte original pour CO */}
+          {activeTab === 'comprehensionOrale' && generatedText && (
+            <div className="bg-orange-50 rounded-lg p-4">
+              <h3 className="font-medium text-orange-800 mb-3">Originaltext</h3>
+              <div className="max-h-48 overflow-y-auto bg-white p-3 rounded-md">
+                <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                  {generatedText.texte}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Détails selon le type */}
           
-          {/* Correction Compréhension */}
-          {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && evaluationData && (
+          {/* Correction Compréhension Orale (réponse rédigée) */}
+          {activeTab === 'comprehensionOrale' && productionCorrection && (
+            <div className="bg-orange-50 rounded-lg p-4 space-y-4">
+              <h3 className="font-medium text-orange-800 mb-3">Detaillierte Korrektur</h3>
+              
+              <div className="space-y-3">
+                <div>
+                  <h4 className="font-medium text-orange-700">Compréhension</h4>
+                  <p className="text-sm text-orange-600">{productionCorrection.comprehension || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-orange-700">Vocabulaire</h4>
+                  <p className="text-sm text-orange-600">{productionCorrection.vocabulaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-orange-700">Grammaire</h4>
+                  <p className="text-sm text-orange-600">{productionCorrection.grammaire || 'Aucun commentaire'}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-orange-700">Conseils</h4>
+                  <p className="text-sm text-orange-600">{productionCorrection.conseils || 'Aucun commentaire'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Correction Compréhension Écrite (mix QCM + production) */}
+          {activeTab === 'comprehensionEcrite' && evaluationData && (
             <div className="bg-gray-50 rounded-lg p-4 space-y-4 max-h-96 overflow-y-auto">
               <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
               {evaluationData.questions.map((question, index) => {
-                const userAnswer = answers[index];
-                const isCorrect = userAnswer === question.bonneReponse;
-                
-                return (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
-                  >
-                    <p className="font-medium text-gray-800 mb-1">
-                      Question {index + 1}: {question.question}
-                    </p>
-                    <p className="text-sm">
-                      <span className="text-gray-600">Votre réponse:</span> 
-                      <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
-                        {userAnswer !== undefined ? question.choix[userAnswer] : 'Non répondue'}
-                      </span>
-                    </p>
-                    <p className="text-sm">
-                      <span className="text-gray-600">Réponse correcte:</span> 
-                      <span className="text-green-700 font-medium">{question.choix[question.bonneReponse]}</span>
-                    </p>
-                    {question.explication && (
-                      <p className="text-xs text-gray-500 mt-1">{question.explication}</p>
-                    )}
-                  </div>
-                );
+                if (question.type === 'qcm') {
+                  const userAnswer = answers.qcm?.[index];
+                  const isCorrect = userAnswer !== undefined && userAnswer === question.bonneReponse;
+                  
+                  return (
+                    <div
+                      key={index}
+                      className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                    >
+                      <p className="font-medium text-gray-800 mb-1">
+                        Frage {index + 1}: {question.question}
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-gray-600">Ihre Antwort:</span> 
+                        <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
+                          {userAnswer !== undefined ? question.choix[userAnswer] : 'Nicht beantwortet'}
+                        </span>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-gray-600">Richtige Antwort:</span> 
+                        <span className="text-green-700 font-medium">{question.choix[question.bonneReponse]}</span>
+                      </p>
+                      {question.explication && (
+                        <p className="text-xs text-gray-500 mt-1">{question.explication}</p>
+                      )}
+                    </div>
+                  );
+                } else if (question.type === 'production') {
+                  const userAnswer = answers.production?.[index];
+                  return (
+                    <div key={index} className="p-3 rounded-md border-l-4 border-blue-500 bg-blue-50">
+                      <p className="font-medium text-gray-800 mb-1">
+                        Frage {index + 1}: {question.question}
+                      </p>
+                      <p className="text-sm text-gray-600 mb-1">{question.consigne}</p>
+                      <p className="text-sm">
+                        <span className="text-gray-600">Ihre Antwort:</span> 
+                        <span className="text-blue-700">{userAnswer || 'Nicht beantwortet'}</span>
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
               })}
             </div>
           )}
