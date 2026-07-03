@@ -43,9 +43,11 @@ interface ComprehensionEvaluation {
 
 /** Type pour un sujet d'expression écrite/orale */
 interface ExpressionSubject {
-  subject: string;
-  instructions: string;
-  niveau: NiveauCECRL;
+  sujet: string;
+  consigne: string;
+  dureeConseillee: string;
+  niveauVise: NiveauCECRL;
+  motsCles: string[];
 }
 
 /** Type pour la correction d'expression écrite */
@@ -498,6 +500,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
 
   /**
    * Génère un sujet d'expression via Mistral
+   * Le sujet et la consigne doivent être ENTIÈREMENT en allemand
    */
   const generateExpressionSubject = useCallback(async (forOral: boolean = false) => {
     const context = getCurrentContext();
@@ -505,31 +508,42 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
     setError(null);
 
     try {
-      const contextText = context.type === 'lecon' 
-        ? `Basé sur cette leçon avec vocabulaire : ${context.vocabulaire?.join(', ') || 'aucun'}`
-        : `Thème : ${context.value}`;
+      const contextVocab = context.type === 'lecon' 
+        ? context.vocabulaire?.join(', ') || ''
+        : context.value;
 
-      const prompt = `Tu es un professeur d'allemand. Crée un sujet d'expression ${forOral ? 'orale' : 'écrite'} pour un élève de niveau ${niveauCECRL}.
+      const prompt = `Tu es un professeur d'allemand. Crée un sujet d'expression ${forOral ? 'orale' : 'écrite'} ENTIÈREMENT EN ALLEMAND pour un élève de niveau ${niveauCECRL}.
 
 ---
-Contexte: ${contextText}
+Contexte: ${contextVocab}
 Niveau: ${niveauCECRL}
 Type: ${forOral ? 'oral' : 'écrit'}
----
+--- 
 
 ${forOral ? 
-        'Crée un sujet court (1-2 phrases max) pour une expression orale spontanée. Le sujet doit être clair et permettre à l\'élève de parler pendant 1-2 minutes.' :
-        'Crée un sujet de rédaction avec des instructions claires. Le sujet doit être adapté au niveau et permettre à l\'élève d\'écrire un texte de 100-150 mots.'
+        'Crée un sujet court (1-2 phrases max) en allemand pour une expression orale spontanée. Le sujet doit être clair et permettre à l\'élève de parler pendant 1-2 minutes. La consigne doit guider l\'élève pour structurer sa réponse.' :
+        'Crée un sujet de rédaction en allemand avec des consignes claires. Le sujet doit être adapté au niveau et permettre à l\'élève d\'écrire un texte de 100-150 mots. La consigne doit être précise et en allemand.'
       }
 
-Réponds avec UN SEUL objet JSON :
+Réponds avec UN SEUL objet JSON avec TOUS les champs en allemand :
 {
-  "subject": "[sujet en français]",
-  "instructions": "[instructions détaillées en français]",
-  "niveau": "${niveauCECRL}"
+  "sujet": "[problématique en allemand - 1 phrase claire]",
+  "consigne": "[consigne détaillée en allemand pour guider l'élève]",
+  "dureeConseillee": "15 Minuten",
+  "niveauVise": "${niveauCECRL}",
+  "motsCles": ["mot1", "mot2", "mot3", ...]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+Exemple:
+{
+  "sujet": "Sind soziale Netzwerke gut oder schlecht für Jugendliche?",
+  "consigne": "Geben Sie Ihre Meinung mit 2 Argumenten dafür und 2 Argumenten dagegen. Benutzen Sie konkrete Beispiele.",
+  "dureeConseillee": "15 Minuten",
+  "niveauVise": "B1",
+  "motsCles": ["soziale Netzwerke", "Jugendliche", "Vorteile", "Nachteile", "Beispiele"]
+}
+
+IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
       const response = await fetch('/api/mistral', {
         method: 'POST',
@@ -549,14 +563,16 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
       const data = await response.json();
       
-      if (!data.subject || !data.instructions) {
-        throw new Error('Réponse Mistral invalide : sujet ou instructions manquants');
+      if (!data.sujet || !data.consigne) {
+        throw new Error('Réponse Mistral invalide : sujet ou consigne manquants');
       }
 
       const subject: ExpressionSubject = {
-        subject: String(data.subject),
-        instructions: String(data.instructions),
-        niveau: data.niveau || niveauCECRL,
+        sujet: String(data.sujet),
+        consigne: String(data.consigne),
+        dureeConseillee: String(data.dureeConseillee || (forOral ? '2 Minuten' : '15 Minuten')),
+        niveauVise: (data.niveauVise as NiveauCECRL) || niveauCECRL,
+        motsCles: Array.isArray(data.motsCles) ? data.motsCles.map(String) : [],
       };
 
       if (forOral) {
@@ -713,7 +729,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       const prompt = `Tu es un professeur d'allemand. Corrige ce texte écrit par un élève de niveau ${niveauCECRL}.
 
 ---
-Sujet: ${expressionSubject.subject}
+Sujet: ${expressionSubject.sujet}
 Texte de l'élève: ${writtenAnswer}
 Niveau: ${niveauCECRL}
 ---
@@ -795,7 +811,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       const prompt = `Tu es un professeur d'allemand. Corrige cette transcription d'expression orale d'un élève de niveau ${niveauCECRL}.
 
 ---
-Sujet: ${oralSubject.subject}
+Sujet: ${oralSubject.sujet}
 Transcription: ${transcript}
 Niveau: ${niveauCECRL}
 ---
@@ -1405,7 +1421,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
-              Expression écrite
+              Schriftlicher Ausdruck
             </h2>
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
@@ -1414,25 +1430,40 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
           {/* Sujet */}
           <div className="bg-purple-50 rounded-lg p-4 mb-6">
-            <h3 className="font-medium text-purple-800 mb-2">Sujet</h3>
-            <p className="text-purple-700 mb-3">{expressionSubject.subject}</p>
-            <p className="text-sm text-purple-600">{expressionSubject.instructions}</p>
+            <h3 className="font-medium text-purple-800 mb-2">Thema</h3>
+            <p className="text-purple-700 mb-3 text-lg font-medium">{expressionSubject.sujet}</p>
+            <p className="text-sm text-purple-600 mb-3">{expressionSubject.consigne}</p>
+            {expressionSubject.motsCles && expressionSubject.motsCles.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-purple-200">
+                <p className="text-xs text-purple-500 mb-2">Schlüsselwörter:</p>
+                <div className="flex flex-wrap gap-1">
+                  {expressionSubject.motsCles.map((word, index) => (
+                    <span key={index} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                      {word}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-purple-400 mt-2">
+              Empfohlene Dauer: {expressionSubject.dureeConseillee} | Niveau: {expressionSubject.niveauVise}
+            </p>
           </div>
 
           {/* Zone de saisie */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Votre texte (100-150 mots recommandés)
+              Ihr Text (empfohlen: 100-150 Wörter)
             </label>
             <textarea
               value={writtenAnswer}
               onChange={(e) => setWrittenAnswer(e.target.value)}
-              placeholder="Rédigez votre texte en allemand ici..."
+              placeholder="Schreiben Sie Ihren Text hier auf Deutsch..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[200px]"
               rows={10}
             />
             <p className="text-xs text-gray-500 mt-1">
-              {writtenAnswer.length} caractères
+              {writtenAnswer.length} Zeichen
             </p>
           </div>
 
@@ -1441,7 +1472,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               onClick={() => setStep('setup')}
               className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
             >
-              Changer de sujet
+              Thema ändern
             </button>
             <button
               onClick={correctWrittenExpression}
@@ -1451,7 +1482,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   ? 'bg-purple-600 hover:bg-purple-700 cursor-pointer'
                   : 'bg-purple-300 cursor-not-allowed'}`}
             >
-              {isLoading ? 'Correction en cours...' : 'Soumettre pour correction'}
+              {isLoading ? 'Korrektur läuft...' : 'Zur Korrektur einreichen'}
             </button>
           </div>
         </div>
@@ -1464,7 +1495,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
-              Expression orale
+              Mündlicher Ausdruck
             </h2>
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
@@ -1473,14 +1504,29 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
           {/* Sujet */}
           <div className="bg-green-50 rounded-lg p-4 mb-6">
-            <h3 className="font-medium text-green-800 mb-2">Sujet</h3>
-            <p className="text-green-700 mb-3">{oralSubject.subject}</p>
-            <p className="text-sm text-green-600">{oralSubject.instructions}</p>
+            <h3 className="font-medium text-green-800 mb-2">Thema</h3>
+            <p className="text-green-700 mb-3 text-lg font-medium">{oralSubject.sujet}</p>
+            <p className="text-sm text-green-600 mb-3">{oralSubject.consigne}</p>
+            {oralSubject.motsCles && oralSubject.motsCles.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200">
+                <p className="text-xs text-green-500 mb-2">Schlüsselwörter:</p>
+                <div className="flex flex-wrap gap-1">
+                  {oralSubject.motsCles.map((word, index) => (
+                    <span key={index} className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                      {word}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-green-400 mt-2">
+              Empfohlene Dauer: {oralSubject.dureeConseillee} | Niveau: {oralSubject.niveauVise}
+            </p>
           </div>
 
           {/* Enregistrement */}
           <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="font-medium text-gray-800 mb-3">Enregistrement</h3>
+            <h3 className="font-medium text-gray-800 mb-3">Aufnahme</h3>
             
             {!isRecording ? (
               <button
@@ -1490,7 +1536,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 }}
                 className="w-full px-6 py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-lg"
               >
-                🎤 Commencer l\'enregistrement
+                🎤 Aufnahme starten
               </button>
             ) : (
               <div className="space-y-3">
@@ -1501,11 +1547,11 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   }}
                   className="w-full px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
                 >
-                  ⏹ Arrêter l\'enregistrement
+                  ⏹ Aufnahme stoppen
                 </button>
                 <div className="bg-white rounded-md p-3">
-                  <p className="text-sm font-medium text-gray-700 mb-1">Transcription :</p>
-                  <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'Parlez...'}</p>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Transkription:</p>
+                  <p className="text-gray-600 whitespace-pre-wrap">{transcript || 'Sprechen Sie...'}</p>
                 </div>
               </div>
             )}
@@ -1521,7 +1567,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
               >
-                Recommencer
+                Neu aufnehmen
               </button>
               <button
                 onClick={correctOralExpression}
@@ -1531,7 +1577,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                     ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
                     : 'bg-green-300 cursor-not-allowed'}`}
               >
-                {isLoading ? 'Correction en cours...' : 'Soumettre pour correction'}
+                {isLoading ? 'Korrektur läuft...' : 'Zur Korrektur einreichen'}
               </button>
             </div>
           )}
@@ -1561,7 +1607,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             </div>
             <p className="text-gray-600">
               {activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ?
-                `${Math.round((score / 100) * evaluationData?.questions.length || 5)}/${evaluationData?.questions.length || 5} bonnes réponses` :
+                `${Math.round((score / 100) * (evaluationData?.questions.length || 5))}/${evaluationData?.questions.length || 5} bonnes réponses` :
                 `Score global`}
             </p>
           </div>
