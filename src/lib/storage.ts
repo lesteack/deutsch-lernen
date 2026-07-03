@@ -532,26 +532,57 @@ export function updateLecon(manuelId: string, chapitreId: string, leconId: strin
   return updated;
 }
 
-/** Supprime une leçon d'un chapitre */
-export function deleteLecon(manuelId: string, chapitreId: string, leconId: string): boolean {
+/** Supprime une leçon d'un chapitre avec suppression en cascade
+ * Si le chapitre devient vide → supprimer le chapitre
+ * Si le manuel devient vide → supprimer le manuel
+ */
+export function deleteLecon(manuelId: string, chapitreId: string, leconId: string): {
+  success: boolean;
+  deletedManuelId?: string;
+  deletedChapitreId?: string;
+} {
   const manuels = getManuels();
   const manuelIndex = manuels.findIndex(m => m.id === manuelId);
   
-  if (manuelIndex === -1) return false;
+  if (manuelIndex === -1) return { success: false };
   
   const chapitreIndex = manuels[manuelIndex].chapitres.findIndex(c => c.id === chapitreId);
-  if (chapitreIndex === -1) return false;
+  if (chapitreIndex === -1) return { success: false };
   
   const oldLength = manuels[manuelIndex].chapitres[chapitreIndex].lecons.length;
   manuels[manuelIndex].chapitres[chapitreIndex].lecons = 
     manuels[manuelIndex].chapitres[chapitreIndex].lecons.filter(l => l.id !== leconId);
   
   if (manuels[manuelIndex].chapitres[chapitreIndex].lecons.length === oldLength) {
-    return false;
+    return { success: false };
+  }
+  
+  // Vérifier si le chapitre est maintenant vide
+  const chapitre = manuels[manuelIndex].chapitres[chapitreIndex];
+  const deletedChapitreId = chapitre.lecons.length === 0 ? chapitre.id : undefined;
+  
+  if (deletedChapitreId) {
+    // Supprimer le chapitre
+    manuels[manuelIndex].chapitres = manuels[manuelIndex].chapitres.filter(c => c.id !== chapitreId);
+    
+    // Vérifier si le manuel est maintenant vide
+    const deletedManuelId = manuels[manuelIndex].chapitres.length === 0 ? manuels[manuelIndex].id : undefined;
+    
+    if (deletedManuelId) {
+      // Supprimer le manuel
+      manuels.splice(manuelIndex, 1);
+    }
+    
+    setManuels(manuels);
+    return { 
+      success: true, 
+      deletedManuelId: deletedChapitreId ? deletedManuelId : undefined,
+      deletedChapitreId 
+    };
   }
   
   setManuels(manuels);
-  return true;
+  return { success: true };
 }
 
 /** Récupère toutes les leçons de tous les manuels */
