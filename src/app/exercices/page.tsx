@@ -1713,26 +1713,28 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
   // ==========================================================================
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        {/* En-tête */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold font-serif text-[#1e1b4b]">Exercices</h1>
-          <p className="text-gray-600 mt-2">
+        {/* En-tête avec dégradé */}
+        <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg">
+          <h1 className="text-3xl font-bold text-white">Exercices</h1>
+          <p className="text-white/80 mt-2">
             Générez et corrigez des exercices à partir de vos leçons
           </p>
         </div>
 
         {/* Affichage des erreurs */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md mb-6">
-            {error}
-            <button
-              onClick={() => setError(null)}
-              className="float-right text-red-500 hover:text-red-700"
-            >
-              ×
-            </button>
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">
+            <div className="flex justify-between items-start">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-500 hover:text-red-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
           </div>
         )}
 
@@ -1740,7 +1742,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
              ÉTAPE 1 : SÉLECTION + SÉLECTEUR DE THÈME
            ====================================================================== */}
         {step === 'select' && (
-          <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
               Sélectionnez votre source de contenu
             </h2>
@@ -1785,7 +1787,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       const lecon = selectRandomLecon();
                       if (lecon) setSelectedLecon(lecon);
                     }}
-                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm"
+                    className="px-3 py-1 bg-[#3730a3]/10 text-[#3730a3] rounded-xl hover:bg-[#3730a3]/20 text-sm font-medium transition-all duration-200"
                   >
                     🔄 Choisir aléatoirement
                   </button>
@@ -1962,9 +1964,9 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
              ÉTAPE 2 : GÉNÉRATION
            ====================================================================== */}
         {step === 'generating' && (
-          <div className="bg-white rounded-lg shadow-md p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">
+          <div className="bg-white rounded-xl shadow-md p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3730a3] mx-auto mb-4"></div>
+            <h2 className="text-xl font-semibold text-[#1e293b] mb-2">
               Génération de l'exercice
             </h2>
             <p className="text-gray-600">
@@ -1979,10 +1981,10 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
              ÉTAPE 3 : RÉPONSE
            ====================================================================== */}
         {step === 'answering' && generatedExercise && (
-          <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
             {/* En-tête de l'exercice */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              <h2 className="text-xl font-semibold text-[#1e293b]">
                 {getExerciseTitle(generatedExercise.type)}
               </h2>
               <span className="text-sm text-gray-500">
@@ -2294,8 +2296,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       }
                     }}
                     disabled={isPlayingDictation}
-                    className={`px-4 py-2 rounded-md text-white font-medium transition-colors
-                      ${isPlayingDictation ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 cursor-pointer'}`}
+                    className={`px-4 py-2 rounded-xl text-white font-medium transition-all duration-200
+                      ${isPlayingDictation ? 'bg-yellow-400 cursor-not-allowed' : 'bg-yellow-500 hover:bg-yellow-600 cursor-pointer'}`}
                   >
                     {isPlayingDictation ? '⏳ Lecture en cours...' : '🔊 Écouter la phrase'}
                   </button>
@@ -2306,7 +2308,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                         setIsPlayingDictation(false);
                       }
                     }}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                    className="px-4 py-2 bg-white border border-[#3730a3] text-[#3730a3] rounded-xl hover:bg-[#f8fafc] transition-all duration-200 font-medium"
                   >
                     ⏹ Arrêter
                   </button>
@@ -2333,18 +2335,18 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             <div className="flex gap-3">
               <button
                 onClick={() => setStep('select')}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 bg-white border border-[#3730a3] text-[#3730a3] rounded-xl hover:bg-[#f8fafc] transition-all duration-200 font-medium"
               >
                 Annuler
               </button>
               <button
                 onClick={correctExercise}
                 disabled={getIsExerciseComplete()}
-                className={`px-6 py-2 rounded-md text-white font-medium flex-1 
+                className={`px-6 py-3 rounded-xl text-white font-medium flex-1 
                   ${!getIsExerciseComplete() 
-                    ? 'bg-green-600 hover:bg-green-700 cursor-pointer' 
-                    : 'bg-green-300 cursor-not-allowed'}
-                  transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
+                    ? 'bg-[#3730a3] hover:bg-[#4f46e5] cursor-pointer' 
+                    : 'bg-[#3730a3]/50 cursor-not-allowed'}
+                  transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2`}
               >
                 {isLoading ? (
                   <>
@@ -2363,7 +2365,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
              ÉTAPE 4 : CORRECTION + SAUVEGARDE
            ====================================================================== */}
         {(step === 'correcting' || step === 'saved') && correction && generatedExercise && (
-          <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
             {/* Résultat global */}
             <div className="text-center">
               <h2 className="text-2xl font-bold mb-2">
@@ -2773,7 +2775,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   saveExercise();
                   setStep('saved');
                 }}
-                className="w-full px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                className="w-full px-6 py-3 bg-[#3730a3] text-white rounded-xl hover:bg-[#4f46e5] transition-all duration-200 font-medium"
               >
                 Sauvegarder cet exercice
               </button>
@@ -2809,7 +2811,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                     setAssociationCorrection(null);
                     setDictationCorrection(null);
                   }}
-                  className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                  className="px-6 py-3 bg-[#3730a3] text-white rounded-xl hover:bg-[#4f46e5] transition-all duration-200 font-medium"
                 >
                   Nouvel exercice
                 </button>

@@ -478,32 +478,34 @@ export default function PdfImportPage() {
   // ==========================================================================
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-        {/* En-tête */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Importer un cours PDF</h1>
-          <p className="text-gray-600 mt-2">
+        {/* En-tête avec dégradé */}
+        <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg">
+          <h1 className="text-3xl font-bold text-white mb-2">Importer un cours PDF</h1>
+          <p className="text-white/80">
             Extrayez le contenu de vos manuels pour créer des exercices personnalisés
           </p>
         </div>
 
         {/* Affichage des erreurs */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md mb-6">
-            {error}
-            <button
-              onClick={() => setError(null)}
-              className="float-right text-red-500 hover:text-red-700 mt-1"
-            >
-              ×
-            </button>
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">
+            <div className="flex justify-between items-start">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-500 hover:text-red-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
           </div>
         )}
 
         {/* ÉTAPE 1 : UPLOAD DU FICHIER */}
         {step === 'upload' && (
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-xl shadow-md p-6">
             <h2 className="text-xl font-semibold text-gray-700 mb-4">
               Étape 1 : Sélectionner un fichier PDF
             </h2>
@@ -595,7 +597,7 @@ export default function PdfImportPage() {
 
         {/* ÉTAPE 2 : EXTRACTION EN COURS */}
         {step === 'extracting' && (
-          <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <div className="bg-white rounded-xl shadow-md p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
             <h2 className="text-xl font-semibold text-gray-700 mb-2">
               Extraction du texte
@@ -612,7 +614,7 @@ export default function PdfImportPage() {
         {/* ÉTAPE 3 : APERÇU DU TEXTE EXTRAIT */}
         {step === 'preview' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-700 mb-2">
                 Étape 2 : Aperçu du texte extrait
               </h2>
@@ -639,7 +641,7 @@ export default function PdfImportPage() {
 
             <div className="space-y-4">
               {chapters.map((chapter, chapterIndex) => (
-                <div key={chapter.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+                <div key={chapter.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                   <div className="bg-gray-50 p-4 border-b border-gray-200">
                     <h3 className="font-semibold text-gray-800">
                       {chapter.title} ({chapter.lessons.length} leçons)
@@ -677,7 +679,7 @@ export default function PdfImportPage() {
         {/* ÉTAPE 4 : ORGANISATION ET ÉDITION */}
         {step === 'organize' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-700 mb-2">
                 Étape 3 : Organiser et éditer le contenu
               </h2>
@@ -715,7 +717,7 @@ export default function PdfImportPage() {
 
             <div className="space-y-4">
               {chapters.map((chapter, chapterIndex) => (
-                <div key={chapter.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+                <div key={chapter.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                   <div className="bg-blue-50 p-4 border-b border-blue-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -796,7 +798,7 @@ export default function PdfImportPage() {
               ))}
 
               {chapters.length === 0 && (
-                <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
+                <div className="bg-white rounded-xl shadow-md p-8 text-center text-gray-500">
                   <p>Aucun chapitre. Commencez par ajouter un chapitre.</p>
                 </div>
               )}

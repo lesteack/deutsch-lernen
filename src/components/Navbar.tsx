@@ -27,9 +27,9 @@ export default function Navbar() {
     return (
       <Link
         href={href}
-        className={`px-4 py-2 rounded-md text-sm font-medium transition-all
+        className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200
           ${active
-            ? 'text-yellow-300 border-b-2 border-yellow-300'
+            ? 'text-yellow-400 border-b-4 border-yellow-400 bg-white/10'
             : 'text-white/80 hover:text-white hover:bg-white/10'
           }`}
       >
@@ -44,7 +44,7 @@ export default function Navbar() {
         <div className="flex justify-between items-center h-16">
           {/* Logo / Titre */}
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-white">
+            <span className="text-3xl font-bold text-white">
               Deutsch Lernen
             </span>
           </Link>
@@ -137,9 +137,9 @@ function MobileNavLink({ href, pathname, onClick, children }: {
     <Link
       href={href}
       onClick={onClick}
-      className={`block px-4 py-2 text-sm font-medium transition-colors
+      className={`block px-4 py-2 text-sm font-medium transition-colors duration-200
         ${active
-          ? 'text-yellow-300 bg-white/10'
+          ? 'text-yellow-400 border-b-4 border-yellow-400 bg-white/10'
           : 'text-white/80 hover:text-white hover:bg-white/10'
         }`}
     >

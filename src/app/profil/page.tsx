@@ -196,7 +196,7 @@ export default function ProfilPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3730a3]"></div>
       </div>
     );
   }
@@ -213,16 +213,17 @@ export default function ProfilPage() {
   const niveauColor = niveauBadgeColors[progression.niveauEstimeCECRL] || niveauBadgeColors.A1;
 
   return (
-    <div className="space-y-8 p-4 md:p-8 page-fade-in">
-      {/* En-tête */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold font-serif text-[#1e1b4b]">
-          Mon Profil
-        </h1>
-        <p className="text-gray-600 mt-2">
-          Suivez votre progression et vos réussites
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 page-fade-in">
+      <div className="max-w-6xl mx-auto">
+        {/* En-tête avec dégradé */}
+        <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg text-center">
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Mon Profil
+          </h1>
+          <p className="text-white/80">
+            Suivez votre progression et vos réussites
+          </p>
+        </div>
 
       {/* ======================================================================
            CARTES DE STATISTIQUES PRINCIPALES
@@ -455,6 +456,7 @@ export default function ProfilPage() {
         >
           ← Retour au Dashboard
         </Link>
+      </div>
       </div>
     </div>
   );

@@ -1824,43 +1824,46 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
   // ==========================================================================
 
   return (
-    <div className="space-y-6 p-4 md:p-8">
-      {/* En-tête */}
-      <div className="text-center">
-        <h1 className="text-3xl font-bold font-serif text-[#1e1b4b] mb-2">
-          Évaluation
-        </h1>
-        <p className="text-gray-600">
-          Testez et améliorez vos compétences en allemand
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* En-tête avec dégradé */}
+        <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg text-center">
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Évaluation
+          </h1>
+          <p className="text-white/80">
+            Testez et améliorez vos compétences en allemand
+          </p>
+        </div>
 
       {/* Affichage des erreurs */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
-          {error}
-          <button
-            onClick={() => setError(null)}
-            className="float-right text-red-500 hover:text-red-700 mt-1"
-          >
-            ×
-          </button>
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">
+          <div className="flex justify-between items-start">
+            <span>{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-500 hover:text-red-700 text-xl"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
       {/* ======================================================================
            ONGLETS DE NAVIGATION
          ====================================================================== */}
-      <div className="bg-white rounded-xl shadow-md p-2">
+      <div className="bg-white rounded-xl shadow-md p-2 mb-8">
         <div className="flex flex-wrap gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2
+              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2
                 ${activeTab === tab.id
-                  ? `bg-${tabColors[tab.id]}-100 text-${tabColors[tab.id]}-700`
-                  : 'text-gray-600 hover:bg-gray-100'
+                  ? `bg-[#3730a3] text-white border-b-4 border-yellow-400`
+                  : 'text-gray-700 hover:bg-gray-100'
                 }`}
             >
               <span>{tab.icon}</span>
@@ -3219,6 +3222,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

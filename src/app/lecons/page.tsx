@@ -23,11 +23,20 @@ const tabLabels: Record<TabType, string> = {
   autre: 'Autre',
 };
 
+// Couleurs des bordures pour les cartes de leçons
+const cardBorderColors: Record<TabType, string> = {
+  grammaire: 'border-blue-400',
+  vocabulaire: 'border-green-400',
+  conjugaison: 'border-orange-400',
+  autre: 'border-purple-400',
+};
+
+// Couleurs des onglets actifs
 const tabColors: Record<TabType, string> = {
-  grammaire: 'purple',
-  vocabulaire: 'blue',
-  conjugaison: 'indigo',
-  autre: 'gray',
+  grammaire: 'bg-blue-600 text-white',
+  vocabulaire: 'bg-green-600 text-white',
+  conjugaison: 'bg-orange-600 text-white',
+  autre: 'bg-purple-600 text-white',
 };
 
 // ============================================================================
@@ -103,22 +112,25 @@ export default function LeconsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* En-tête */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Mes leçons</h1>
-          <p className="text-gray-600 mt-1">
-            Gérez et consultez vos leçons importées
-          </p>
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* En-tête avec dégradé */}
+        <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-white">Mes leçons</h1>
+              <p className="text-white/80 mt-2">
+                Gérez et consultez vos leçons importées
+              </p>
+            </div>
+            <Link
+              href="/lecons/import"
+              className="px-6 py-3 bg-yellow-400 text-black rounded-xl hover:bg-yellow-500 transition-all duration-200 font-bold shadow-md"
+            >
+              + Importer un PDF
+            </Link>
+          </div>
         </div>
-        <Link
-          href="/lecons/import"
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-        >
-          + Importer un PDF
-        </Link>
-      </div>
 
       {/* Affichage des erreurs */}
       {error && (
@@ -136,16 +148,16 @@ export default function LeconsPage() {
       {/* ======================================================================
            ONGLETS DE FILTRAGE
          ====================================================================== */}
-      <div className="bg-white rounded-xl shadow-md p-2">
+      <div className="bg-white rounded-xl shadow-md p-2 mb-8">
         <div className="flex gap-1">
           {(Object.keys(tabLabels) as TabType[]).map((tab) => (
             <button
               key={tab}
               onClick={() => handleTabChange(tab)}
-              className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200
                 ${activeTab === tab
-                  ? `bg-${tabColors[tab].split('-')[1]} text-white`
-                  : 'text-gray-600 hover:bg-gray-100'}`}
+                  ? `${tabColors[tab]} border-b-4 border-yellow-400`
+                  : 'text-gray-700 hover:bg-gray-100'}`}
             >
               {tabLabels[tab]}
             </button>
@@ -156,54 +168,61 @@ export default function LeconsPage() {
       {/* ======================================================================
            LISTE DES LEÇONS
          ====================================================================== */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-800">
+      <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold text-[#1e293b]">
             {tabLabels[activeTab]} ({filteredLecons.length} leçon{filteredLecons.length !== 1 ? 's' : ''})
           </h2>
         </div>
 
         {filteredLecons.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <p>Aucune leçon de type "{tabLabels[activeTab]}" importée.</p>
-            <p className="mt-2 text-sm">
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">📚</div>
+            <p className="text-[#1e293b] text-lg mb-2">Aucune leçon de type "{tabLabels[activeTab]}" importée.</p>
+            <p className="text-gray-600 text-sm mb-6">
               Importez un PDF pour commencer.
             </p>
+            <Link
+              href="/lecons/import"
+              className="inline-block px-6 py-3 bg-[#3730a3] text-white rounded-xl hover:bg-[#4f46e5] transition-all duration-200 font-medium"
+            >
+              Importer un PDF maintenant
+            </Link>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {filteredLecons.map((lecon) => (
               <div
                 key={lecon.id}
-                className={`border border-gray-200 rounded-lg p-4 cursor-pointer transition-colors
-                  ${selectedLecon?.id === lecon.id ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
+                className={`bg-white border-l-4 rounded-xl p-5 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md
+                  ${cardBorderColors[lecon.type as TabType]} ${selectedLecon?.id === lecon.id ? 'bg-[#f8fafc]' : ''}`}
                 onClick={() => handleSelectLecon(lecon)}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-600">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-2xl">
                         {lecon.type === 'grammaire' && '📚'}
                         {lecon.type === 'vocabulaire' && '📖'}
                         {lecon.type === 'conjugaison' && '🔄'}
                         {lecon.type === 'autre' && '📋'}
                       </span>
-                      <h3 className="font-medium text-gray-800">{lecon.titre}</h3>
+                      <h3 className="font-semibold text-[#1e293b] text-lg">{lecon.titre}</h3>
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">
-                      {lecon.contenuTexte.substring(0, 100)}...
+                    <p className="text-gray-600 text-sm mb-3">
+                      {lecon.contenuTexte.substring(0, 150)}...
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {lecon.notionsCles.slice(0, 3).map((notion, index) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                          className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
                         >
                           {notion}
                         </span>
                       ))}
                       {lecon.notionsCles.length > 3 && (
-                        <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                        <span className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
                           +{lecon.notionsCles.length - 3} autres
                         </span>
                       )}
@@ -212,8 +231,6 @@ export default function LeconsPage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Pour supprimer, il faudrait connaître manuelId et chapitreId
-                      // On va juste afficher un message pour l'instant
                       setError('La suppression sera implémentée dans une prochaine version');
                     }}
                     className="text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -228,11 +245,11 @@ export default function LeconsPage() {
                 {/* Détails (si sélectionnée) */}
                 {selectedLecon?.id === lecon.id && (
                   <div className="mt-4 pt-4 border-t border-gray-200 animate-fade-in">
-                    <h4 className="font-medium text-gray-700 mb-2">Détails</h4>
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap mb-3">
+                    <h4 className="font-medium text-[#1e293b] mb-2">Détails</h4>
+                    <p className="text-gray-600 text-sm whitespace-pre-wrap mb-4">
                       {lecon.contenuTexte}
                     </p>
-                    <div className="flex flex-wrap gap-2 mb-3">
+                    <div className="flex flex-wrap gap-2 mb-4">
                       {lecon.notionsCles.map((notion, index) => (
                         <span
                           key={index}
@@ -257,22 +274,24 @@ export default function LeconsPage() {
            INFOS SUR L'IMPORT
          ====================================================================== */}
       {lecons.length === 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-          <h3 className="font-semibold text-blue-800 mb-2">
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <div className="text-6xl mb-4">📖</div>
+          <h3 className="font-semibold text-[#1e293b] text-xl mb-2">
             Pas encore de leçons ?
           </h3>
-          <p className="text-blue-700 text-sm mb-4">
+          <p className="text-gray-600 text-sm mb-6 max-w-md mx-auto">
             Importez vos manuels PDF pour commencer à créer des exercices.
             Vos leçons seront automatiquement classées par type.
           </p>
           <Link
             href="/lecons/import"
-            className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+            className="inline-block px-6 py-3 bg-[#3730a3] text-white rounded-xl hover:bg-[#4f46e5] transition-all duration-200 font-medium"
           >
-            Importer un PDF maintenant →
+            Importer un PDF maintenant
           </Link>
         </div>
       )}
+      </div>
     </div>
   );
 }
