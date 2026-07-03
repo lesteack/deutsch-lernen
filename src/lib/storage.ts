@@ -12,6 +12,25 @@
 // TYPES / INTERFACES
 // ============================================================================
 
+/** Type pour la fiche de révision */
+export interface FicheRevision {
+  titre: string;
+  resume: string;
+  pointsCles: string[];
+  regles: Array<{
+    regle: string;
+    explication: string;
+    exemple: string;
+  }>;
+  vocabulaireImportant: Array<{
+    mot: string;
+    traduction: string;
+    exemple: string;
+  }>;
+  astuce: string;
+  dateGeneration: string;
+}
+
 /** Type pour une leçon */
 export interface Lecon {
   id: string;
@@ -20,6 +39,7 @@ export interface Lecon {
   contenuTexte: string;
   notionsCles: string[];
   dateAjout: string;
+  ficheRevision?: FicheRevision;
 }
 
 /** Type pour un chapitre */

@@ -6,9 +6,11 @@ import {
   addManuel,
   addChapitre,
   addLecon,
+  updateLecon,
   type Manuel,
   type Chapitre,
   type Lecon,
+  type FicheRevision,
 } from '@/lib/storage';
 
 // ============================================================================
@@ -51,6 +53,8 @@ export default function PdfImportPage() {
   const [editor, setEditor] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingFiche, setIsGeneratingFiche] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string>('');
 
   // État pour le contenu extrait
   const [rawText, setRawText] = useState('');
@@ -379,10 +383,106 @@ export default function PdfImportPage() {
   };
 
   // ==========================================================================
+  // GÉNÉRATION DE FICHE DE RÉVISION
+  // ==========================================================================
+
+  /**
+   * Génère une fiche de révision pour une leçon via Mistral
+   */
+  const generateFicheRevisionForLecon = useCallback(async (leconId: string, leconContent: string, leconTitle: string, leconType: Lecon['type']): Promise<FicheRevision | null> => {
+    try {
+      const prompt = `Tu es un professeur d'allemand. Crée une fiche de révision complète et structurée basée sur le contenu suivant :
+
+---
+Contenu de la leçon:
+${leconContent.substring(0, 2000)}
+Type: ${leconType}
+Titre: ${leconTitle}
+---
+
+Crée une fiche de révision en JSON avec la structure exacte suivante :
+
+{
+  "titre": "Titre de la fiche de révision",
+  "resume": "Résumé en 3-4 phrases en français de la notion principale",
+  "pointsCles": [
+    "Point clé 1",
+    "Point clé 2",
+    "Point clé 3"
+  ],
+  "regles": [
+    {
+      "regle": "Nom de la règle grammaticale ou concept",
+      "explication": "Explication courte en français",
+      "exemple": "Beispielsatz auf Deutsch (en allemand)"
+    }
+  ],
+  "vocabulaireImportant": [
+    {
+      "mot": "das Verb",
+      "traduction": "le verbe",
+      "exemple": "Exemple de phrase en allemand utilisant ce mot"
+    }
+  ],
+  "astuce": "Conseil mnémotechnique ou astuce pour retenir, en français"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON valide, sans texte supplémentaire, sans commentaires.
+Si le contenu ne contient pas d'informations grammaticales, adapte la structure (regles peut être vide).
+Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la génération de la fiche');
+      }
+
+      const data = await response.json();
+      
+      // Validation de la réponse
+      if (!data.titre || !data.resume || !data.pointsCles) {
+        throw new Error('Fiche de révision invalide');
+      }
+
+      return {
+        titre: String(data.titre),
+        resume: String(data.resume),
+        pointsCles: Array.isArray(data.pointsCles) ? data.pointsCles.map(String) : [],
+        regles: Array.isArray(data.regles) ? data.regles.map((r: any) => ({
+          regle: String(r.regle || ''),
+          explication: String(r.explication || ''),
+          exemple: String(r.exemple || ''),
+        })) : [],
+        vocabulaireImportant: Array.isArray(data.vocabulaireImportant) ? data.vocabulaireImportant.map((v: any) => ({
+          mot: String(v.mot || ''),
+          traduction: String(v.traduction || ''),
+          exemple: String(v.exemple || ''),
+        })) : [],
+        astuce: String(data.astuce || ''),
+        dateGeneration: new Date().toISOString(),
+      };
+
+    } catch (err) {
+      console.error('Erreur lors de la génération de la fiche:', err);
+      return null;
+    }
+  }, []);
+
+  // ==========================================================================
   // SAUVEGARDE
   // ==========================================================================
 
-  const handleSave = () => {
+  const handleSave = useCallback(async () => {
     if (typeof window === 'undefined') {
       setError('Impossible de sauvegarder : environnement non supporté');
       return;
@@ -393,8 +493,20 @@ export default function PdfImportPage() {
       return;
     }
 
+    // Extraire tout le texte du PDF
+    const allText = chapters.map(chapter => 
+      chapter.lessons.map(lesson => lesson.text).join('\n\n')
+    ).join('\n\n');
+
+    if (!allText.trim()) {
+      setError('Aucun contenu valide trouvé dans le PDF');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+    setGenerationStatus('✅ Leçon sauvegardée, génération de la fiche de révision en cours...');
+    setIsGeneratingFiche(true);
 
     try {
       // Créer le manuel
@@ -407,44 +519,64 @@ export default function PdfImportPage() {
 
       const createdManuel = addManuel(manuelData);
 
-      // Créer les chapitres et leçons
-      for (const chapter of chapters) {
-        // Filtrer les leçons vides
-        const validLessons = chapter.lessons.filter(l => l.text.trim().length > 0);
+      // Créer un chapitre unique pour cette leçon (1 PDF = 1 leçon)
+      const chapitreData: Omit<Chapitre, 'id'> = {
+        titre: 'Contenu principal',
+        ordre: 0,
+        lecons: [],
+      };
 
-        if (validLessons.length === 0) continue;
-
-        // Créer le chapitre
-        const chapitreData: Omit<Chapitre, 'id'> = {
-          titre: chapter.title.trim() || `Chapitre ${chapters.findIndex(ch => ch.id === chapter.id) + 1}`,
-          ordre: chapters.findIndex(ch => ch.id === chapter.id),
-          lecons: [],
-        };
-
-        const createdChapter = addChapitre(createdManuel.id, chapitreData);
-        if (!createdChapter) continue;
-
-        // Ajouter chaque leçon
-        for (const lesson of validLessons) {
-          const leconData: Omit<Lecon, 'id' | 'dateAjout'> = {
-            titre: lesson.title.trim() || `Leçon ${validLessons.findIndex(l => l.id === lesson.id) + 1}`,
-            type: defaultLessonType,
-            contenuTexte: lesson.text.trim(),
-            notionsCles: extractNotionsFromText(lesson.text),
-          };
-
-          addLecon(createdManuel.id, createdChapter.id, leconData);
-        }
+      const createdChapter = addChapitre(createdManuel.id, chapitreData);
+      if (!createdChapter) {
+        throw new Error('Impossible de créer le chapitre');
       }
 
-      // Rediriger vers /lecons
-      router.push('/lecons');
+      // Créer la leçon avec tout le contenu du PDF
+      const leconData: Omit<Lecon, 'id' | 'dateAjout'> = {
+        titre: manuelTitle.trim(),
+        type: defaultLessonType,
+        contenuTexte: allText.trim(),
+        notionsCles: extractNotionsFromText(allText),
+        ficheRevision: undefined, // Sera généré après
+      };
+
+      const createdLecon = addLecon(createdManuel.id, createdChapter.id, leconData);
+      
+      if (!createdLecon) {
+        throw new Error('Impossible de créer la leçon');
+      }
+
+      // Générer la fiche de révision automatiquement
+      setGenerationStatus('Génération de la fiche de révision en cours...');
+      
+      const ficheRevision = await generateFicheRevisionForLecon(
+        createdLecon.id,
+        createdLecon.contenuTexte,
+        createdLecon.titre,
+        createdLecon.type
+      );
+
+      if (ficheRevision) {
+        // Mettre à jour la leçon avec la fiche de révision
+        updateLecon(createdManuel.id, createdChapter.id, createdLecon.id, {
+          ficheRevision,
+        });
+        setGenerationStatus('✅ Fiche de révision générée !');
+      } else {
+        setGenerationStatus('⚠️ Fiche de révision non générée (erreur)');
+      }
+
+      // Rediriger vers /lecons après un court délai
+      setTimeout(() => {
+        router.push('/lecons');
+      }, 1500);
 
     } catch (err) {
       setError(`Erreur lors de la sauvegarde: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
       setIsLoading(false);
+      setIsGeneratingFiche(false);
     }
-  };
+  }, [manuelTitle, editor, chapters, defaultLessonType, generateFicheRevisionForLecon, router]);
 
   /**
    * Extrait des notions clés depuis un texte
@@ -703,16 +835,35 @@ export default function PdfImportPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={isLoading || !manuelTitle.trim()}
-                  className={`px-6 py-2 rounded-md text-white font-medium 
-                    ${manuelTitle.trim() && !isLoading 
-                      ? 'bg-green-600 hover:bg-green-700' 
-                      : 'bg-green-300 cursor-not-allowed'}
-                    transition-colors disabled:opacity-50`}
+                  disabled={isLoading || isGeneratingFiche || !manuelTitle.trim()}
+                  className={`px-6 py-2 rounded-xl text-white font-medium 
+                    ${manuelTitle.trim() && !isLoading && !isGeneratingFiche 
+                      ? 'bg-[#3730a3] hover:bg-[#4f46e5]' 
+                      : 'bg-[#3730a3]/50 cursor-not-allowed'}
+                    transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  {isLoading ? 'Sauvegarde...' : 'Enregistrer tout'}
+                  {isLoading || isGeneratingFiche ? (
+                    <span className="flex items-center gap-2">
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                      {isGeneratingFiche ? 'Génération...' : 'Sauvegarde...'}
+                    </span>
+                  ) : (
+                    'Enregistrer tout'
+                  )}
                 </button>
               </div>
+              
+              {/* Indicateur de génération de fiche */}
+              {generationStatus && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <p className="text-blue-700 text-center">{generationStatus}</p>
+                  {isGeneratingFiche && (
+                    <div className="flex justify-center mt-2">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#3730a3]"></div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">

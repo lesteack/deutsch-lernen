@@ -6,8 +6,10 @@ import {
   getAllLecons,
   getManuels,
   deleteLecon,
+  updateLecon,
   type Lecon,
   type ExerciceType,
+  type FicheRevision,
 } from '@/lib/storage';
 
 // ============================================================================
@@ -15,24 +17,6 @@ import {
 // ============================================================================
 
 type TabType = 'grammaire' | 'vocabulaire' | 'conjugaison' | 'autre';
-
-// Type pour la fiche de révision générée par Mistral
-interface FicheRevision {
-  titre: string;
-  resume: string;
-  pointsCles: string[];
-  regles: Array<{
-    regle: string;
-    explication: string;
-    exemple: string;
-  }>;
-  vocabulaireImportant: Array<{
-    mot: string;
-    traduction: string;
-    exemple: string;
-  }>;
-  astuce: string;
-}
 
 const tabLabels: Record<TabType, string> = {
   grammaire: 'Grammaire',
@@ -69,7 +53,6 @@ export default function LeconsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFullContent, setShowFullContent] = useState(false);
-  const [ficheRevision, setFicheRevision] = useState<FicheRevision | null>(null);
   const [isGeneratingFiche, setIsGeneratingFiche] = useState(false);
 
   // Charger les leçons au montage
@@ -97,7 +80,6 @@ export default function LeconsPage() {
   const handleSelectLecon = (lecon: Lecon) => {
     setSelectedLecon(lecon);
     setShowFullContent(false);
-    setFicheRevision(null);
   };
 
   // Supprimer une leçon
@@ -127,10 +109,10 @@ export default function LeconsPage() {
   };
 
   /**
-   * Génère une fiche de révision via Mistral
+   * Génère une fiche de révision via Mistral et met à jour la leçon
    */
-  const generateFicheRevision = useCallback(async (lecon: Lecon) => {
-    if (!lecon?.contenuTexte) return;
+  const generateAndSaveFicheRevision = useCallback(async (lecon: Lecon) => {
+    if (!lecon?.contenuTexte) return null;
 
     setIsGeneratingFiche(true);
     setError(null);
@@ -199,7 +181,8 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
         throw new Error('Fiche de révision invalide');
       }
 
-      setFicheRevision({
+      // Retourner la fiche de révision pour qu'elle soit utilisée par le composant
+      return {
         titre: String(data.titre),
         resume: String(data.resume),
         pointsCles: Array.isArray(data.pointsCles) ? data.pointsCles.map(String) : [],
@@ -214,11 +197,13 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
           exemple: String(v.exemple || ''),
         })) : [],
         astuce: String(data.astuce || ''),
-      });
+        dateGeneration: new Date().toISOString(),
+      };
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
       setError(`Impossible de générer la fiche de révision : ${errorMessage}`);
+      return null;
     } finally {
       setIsGeneratingFiche(false);
     }
@@ -375,9 +360,23 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                         <h4 className="font-semibold text-[#1e293b] flex items-center gap-2">
                           <span>📚</span> Fiche de révision
                         </h4>
-                        {!ficheRevision && (
+                        {!lecon.ficheRevision && (
                           <button
-                            onClick={() => generateFicheRevision(lecon)}
+                            onClick={async () => {
+                              const newFiche = await generateAndSaveFicheRevision(lecon);
+                              if (newFiche) {
+                                // Trouver le manuel et le chapitre de cette leçon pour mettre à jour
+                                const allLecons = getAllLecons();
+                                const leconToUpdate = allLecons.find(l => l.id === lecon.id);
+                                if (leconToUpdate) {
+                                  // Pour simplifier, on va recharger les leçons
+                                  setLecons(getAllLecons());
+                                  filterLeconsByTab(getAllLecons(), activeTab);
+                                  // Resélectionner la leçon pour afficher la fiche
+                                  handleSelectLecon(leconToUpdate);
+                                }
+                              }
+                            }}
                             disabled={isGeneratingFiche}
                             className="px-4 py-2 bg-[#3730a3] text-white rounded-xl hover:bg-[#4f46e5] transition-all duration-200 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -391,11 +390,23 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                             )}
                           </button>
                         )}
-                        {ficheRevision && (
+                        {lecon.ficheRevision && (
                           <button
-                            onClick={() => {
-                              setFicheRevision(null);
-                              setShowFullContent(false);
+                            onClick={async () => {
+                              // Régénérer la fiche
+                              const newFiche = await generateAndSaveFicheRevision(lecon);
+                              if (newFiche) {
+                                // Trouver le manuel et le chapitre
+                                const allManuels = getManuels();
+                                const manuel = allManuels.find(m => m.chapitres.some(c => c.lecons.some(l => l.id === lecon.id)));
+                                const chapitre = manuel?.chapitres.find(c => c.lecons.some(l => l.id === lecon.id));
+                                if (manuel && chapitre) {
+                                  updateLecon(manuel.id, chapitre.id, lecon.id, { ficheRevision: newFiche });
+                                  // Recharger la leçon
+                                  setLecons(getAllLecons());
+                                  filterLeconsByTab(getAllLecons(), activeTab);
+                                }
+                              }
                             }}
                             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 font-medium text-sm"
                           >
@@ -404,20 +415,20 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                         )}
                       </div>
 
-                      {ficheRevision && (
+                      {lecon.ficheRevision && (
                         <div className="space-y-4">
                           {/* Résumé */}
                           <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
                             <h5 className="font-medium text-blue-800 mb-2">Résumé</h5>
-                            <p className="text-blue-700 text-sm">{ficheRevision.resume}</p>
+                            <p className="text-blue-700 text-sm">{lecon.ficheRevision.resume}</p>
                           </div>
 
                           {/* Points clés */}
-                          {ficheRevision.pointsCles.length > 0 && (
+                          {lecon.ficheRevision.pointsCles.length > 0 && (
                             <div className="bg-white p-4 rounded-xl border border-gray-200">
                               <h5 className="font-medium text-[#1e293b] mb-3">🎯 Points clés</h5>
                               <ul className="space-y-2">
-                                {ficheRevision.pointsCles.map((point, index) => (
+                                {lecon.ficheRevision.pointsCles.map((point, index) => (
                                   <li key={index} className="flex items-start gap-2 text-sm">
                                     <span className="text-green-500 mt-1">✓</span>
                                     <span className="text-gray-700">{point}</span>
@@ -428,11 +439,11 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                           )}
 
                           {/* Règles */}
-                          {ficheRevision.regles.length > 0 && (
+                          {lecon.ficheRevision.regles.length > 0 && (
                             <div className="bg-white p-4 rounded-xl border border-gray-200">
                               <h5 className="font-medium text-[#1e293b] mb-3">📖 Règles</h5>
                               <div className="space-y-3">
-                                {ficheRevision.regles.map((regle, index) => (
+                                {lecon.ficheRevision.regles.map((regle, index) => (
                                   <div key={index} className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
                                     <h6 className="font-medium text-yellow-800 mb-1">{regle.regle}</h6>
                                     <p className="text-yellow-700 text-sm mb-1">{regle.explication}</p>
@@ -446,7 +457,7 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                           )}
 
                           {/* Vocabulaire */}
-                          {ficheRevision.vocabulaireImportant.length > 0 && (
+                          {lecon.ficheRevision.vocabulaireImportant.length > 0 && (
                             <div className="bg-white p-4 rounded-xl border border-gray-200">
                               <h5 className="font-medium text-[#1e293b] mb-3">💬 Vocabulaire important</h5>
                               <div className="overflow-x-auto">
@@ -459,7 +470,7 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {ficheRevision.vocabulaireImportant.map((vocab, index) => (
+                                    {lecon.ficheRevision.vocabulaireImportant.map((vocab, index) => (
                                       <tr key={index} className="border-b border-gray-100">
                                         <td className="py-2 text-gray-700">{vocab.mot}</td>
                                         <td className="py-2 text-gray-700">{vocab.traduction}</td>
@@ -473,12 +484,12 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                           )}
 
                           {/* Astuce */}
-                          {ficheRevision.astuce && (
+                          {lecon.ficheRevision.astuce && (
                             <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
                               <h5 className="font-medium text-orange-800 mb-2 flex items-center gap-2">
                                 <span>🧠</span> Astuce
                               </h5>
-                              <p className="text-orange-700 text-sm">{ficheRevision.astuce}</p>
+                              <p className="text-orange-700 text-sm">{lecon.ficheRevision.astuce}</p>
                             </div>
                           )}
 
