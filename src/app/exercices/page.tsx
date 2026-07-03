@@ -332,6 +332,77 @@ export default function ExercicesPage() {
   }, []);
 
   // ==========================================================================
+  // FONCTIONS UTILITAIRES
+  // ==========================================================================
+
+  /**
+   * Retourne le titre de l'exercice selon son type
+   */
+  const getExerciseTitle = useCallback((type: ExerciceType): string => {
+    switch (type) {
+      case 'qcm': return 'QCM - 20 questions';
+      case 'texteATrous': return 'Texte à trous';
+      case 'traduction': return 'Traduction';
+      case 'questionsOuvertes': return 'Question ouverte';
+      case 'remiseEnOrdre': return 'Remise en ordre';
+      case 'conjugaison': return 'Conjugaison';
+      case 'completionDialogue': return 'Complétion de dialogue';
+      case 'association': return 'Association';
+      case 'dictee': return 'Dictée';
+      case 'production': return 'Production écrite';
+      default: return type;
+    }
+  }, []);
+
+  /**
+   * Vérifie si l'exercice est complet (toutes les réponses fournies)
+   */
+  const getIsExerciseComplete = useCallback((): boolean => {
+    if (!generatedExercise) return true;
+    
+    switch (generatedExercise.type) {
+      case 'qcm':
+        return Object.keys(qcmAnswers).length < generatedExercise.questions.length || isLoading;
+      case 'texteATrous':
+        return !textAnswer.trim() || isLoading;
+      case 'traduction':
+        return !translationAnswer.trim() || isLoading;
+      case 'questionsOuvertes':
+        return !openQuestionAnswer.trim() || isLoading;
+      case 'remiseEnOrdre':
+        return reorderSelected.length !== generatedExercise.words.length || isLoading;
+      case 'conjugaison':
+        return !conjugationAnswer.trim() || isLoading;
+      case 'completionDialogue':
+        // Vérifier que tous les trous sont remplis
+        const blanksFilled = generatedExercise.dialogue.every((line: any, index: number) => 
+          !line.isBlank || (dialogueAnswers[index] && dialogueAnswers[index].trim())
+        );
+        return !blanksFilled || isLoading;
+      case 'association':
+        return associationPairs.length !== Math.min(generatedExercise.leftColumn.length, generatedExercise.rightColumn.length) || isLoading;
+      case 'dictee':
+        return !dictationAnswer.trim() || isLoading;
+      case 'production':
+        return !textAnswer.trim() || isLoading;
+      default:
+        return isLoading;
+    }
+  }, [generatedExercise, qcmAnswers, textAnswer, translationAnswer, openQuestionAnswer, reorderSelected, conjugationAnswer, dialogueAnswers, associationPairs, dictationAnswer, isLoading]);
+
+  /**
+   * Retourne le nombre de questions pour l'exercice
+   */
+  const getQuestionCount = useCallback((): number => {
+    if (!generatedExercise) return 1;
+    
+    switch (generatedExercise.type) {
+      case 'qcm': return generatedExercise.questions.length;
+      default: return 1;
+    }
+  }, [generatedExercise]);
+
+  // ==========================================================================
   // SÉLECTEUR DE THÈME
   // ==========================================================================
 
@@ -1449,34 +1520,127 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
    * Sauvegarde l'exercice et son résultat
    */
   const saveExercise = useCallback(() => {
-    if (!generatedExercise || !correction || !selectedLecon) return null;
+    if (!generatedExercise || !correction) return null;
 
     try {
       let contenuJSON: Record<string, unknown>;
       let score: number;
+      let reponseUtilisateur: unknown;
+      let correctionText: string;
 
-      if (generatedExercise.type === 'qcm') {
-        // Pour QCM, sauvegarder le tableau de questions et le score global
-        score = correction.totalScore;
-        contenuJSON = {
-          type: 'qcm',
-          totalQuestions: correction.totalQuestions,
-          correctCount: correction.correctCount,
-          questions: generatedExercise.questions.map(q => ({
-            question: q.question,
-            choix: q.choix,
-            bonneReponse: q.bonneReponse,
-          })),
-        };
-      } else {
-        // Pour texte à trous
-        score = correction.totalScore;
-        contenuJSON = {
-          type: 'texteATrous',
-          question: generatedExercise.question,
-          textWithBlanks: generatedExercise.textWithBlanks,
-          correctAnswer: generatedExercise.correctAnswer,
-        };
+      score = correction.totalScore;
+
+      switch (generatedExercise.type) {
+        case 'qcm':
+          contenuJSON = {
+            type: 'qcm',
+            totalQuestions: correction.totalQuestions,
+            correctCount: correction.correctCount,
+            questions: generatedExercise.questions.map(q => ({
+              question: q.question,
+              choix: q.choix,
+              bonneReponse: q.bonneReponse,
+            })),
+          };
+          reponseUtilisateur = JSON.stringify(qcmAnswers);
+          correctionText = `Score: ${score}/100 - ${correction.correctCount}/${correction.totalQuestions} bonnes réponses`;
+          break;
+
+        case 'texteATrous':
+          contenuJSON = {
+            type: 'texteATrous',
+            question: generatedExercise.question,
+            textWithBlanks: generatedExercise.textWithBlanks,
+            correctAnswer: generatedExercise.correctAnswer,
+          };
+          reponseUtilisateur = textAnswer;
+          correctionText = `Score: ${score}/100 - ${correction.correctCount}/${correction.totalQuestions} bonnes réponses`;
+          break;
+
+        case 'traduction':
+          contenuJSON = {
+            type: 'traduction',
+            sentence: generatedExercise.sentence,
+            direction: generatedExercise.direction,
+            correctTranslation: generatedExercise.correctTranslation,
+          };
+          reponseUtilisateur = translationAnswer;
+          correctionText = `Score: ${score}/100 - ${translationCorrection?.erreurs?.join('; ') || 'Voir détails'}`;
+          break;
+
+        case 'questionsOuvertes':
+          contenuJSON = {
+            type: 'questionsOuvertes',
+            question: generatedExercise.question,
+            expectedAnswer: generatedExercise.expectedAnswer,
+          };
+          reponseUtilisateur = openQuestionAnswer;
+          correctionText = `Score: ${score}/100 - ${openQuestionCorrection?.retour || 'Voir détails'}`;
+          break;
+
+        case 'remiseEnOrdre':
+          contenuJSON = {
+            type: 'remiseEnOrdre',
+            words: generatedExercise.words,
+            correctOrder: generatedExercise.correctOrder,
+            sentence: generatedExercise.sentence,
+          };
+          reponseUtilisateur = reorderSelected;
+          correctionText = `Score: ${score}/100 - ${reorderCorrection?.isCorrect ? 'Correct' : 'Incorrect'}`;
+          break;
+
+        case 'conjugaison':
+          contenuJSON = {
+            type: 'conjugaison',
+            verb: generatedExercise.verb,
+            pronoun: generatedExercise.pronoun,
+            tense: generatedExercise.tense,
+            correctForm: generatedExercise.correctForm,
+          };
+          reponseUtilisateur = conjugationAnswer;
+          correctionText = `Score: ${score}/100 - ${conjugationCorrection?.isCorrect ? 'Correct' : 'Incorrect'}`;
+          break;
+
+        case 'completionDialogue':
+          contenuJSON = {
+            type: 'completionDialogue',
+            dialogue: generatedExercise.dialogue,
+            context: generatedExercise.context,
+          };
+          reponseUtilisateur = dialogueAnswers;
+          correctionText = `Score: ${score}/100 - ${correction.correctCount}/${correction.totalQuestions} bonnes réponses`;
+          break;
+
+        case 'association':
+          contenuJSON = {
+            type: 'association',
+            leftColumn: generatedExercise.leftColumn,
+            rightColumn: generatedExercise.rightColumn,
+            correctPairs: generatedExercise.correctPairs,
+          };
+          reponseUtilisateur = associationPairs;
+          correctionText = `Score: ${score}/100 - ${associationCorrection?.score || score}/100`;
+          break;
+
+        case 'dictee':
+          contenuJSON = {
+            type: 'dictee',
+            sentence: generatedExercise.sentence,
+            words: generatedExercise.words,
+          };
+          reponseUtilisateur = dictationAnswer;
+          correctionText = `Score: ${score}/100 - ${dictationCorrection?.wordCorrections?.filter(w => w.isCorrect).length || 0}/${dictationCorrection?.wordCorrections?.length || 1} mots corrects`;
+          break;
+
+        case 'production':
+        default:
+          contenuJSON = {
+            type: generatedExercise.type,
+            question: (generatedExercise as any).question,
+          };
+          reponseUtilisateur = textAnswer;
+          correctionText = `Score: ${score}/100`;
+          break;
       }
 
       // Sauvegarder via storage
@@ -1484,10 +1648,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         type: generatedExercise.type,
         leconsAssociees: themeSource === 'cours' && selectedLecon ? [selectedLecon.id] : [],
         contenuJSON,
-        reponseUtilisateur: generatedExercise.type === 'qcm' 
-          ? JSON.stringify(qcmAnswers) 
-          : textAnswer,
-        correction: `Score: ${score}/100 - ${correction.correctCount}/${correction.totalQuestions} bonnes réponses`,
+        reponseUtilisateur,
+        correction: correctionText,
         score,
       });
 
@@ -1500,7 +1662,27 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       setError(`Impossible de sauvegarder l'exercice : ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
       return null;
     }
-  }, [generatedExercise, correction, selectedLecon, qcmAnswers, textAnswer, themeSource]);
+  }, [
+    generatedExercise, 
+    correction, 
+    selectedLecon, 
+    qcmAnswers, 
+    textAnswer, 
+    themeSource,
+    translationAnswer,
+    openQuestionAnswer,
+    reorderSelected,
+    conjugationAnswer,
+    dialogueAnswers,
+    associationPairs,
+    dictationAnswer,
+    translationCorrection,
+    openQuestionCorrection,
+    reorderCorrection,
+    conjugationCorrection,
+    associationCorrection,
+    dictationCorrection
+  ]);
 
   // ==========================================================================
   // RENDU
@@ -1777,7 +1959,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             {/* En-tête de l'exercice */}
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
-                {generatedExercise.type === 'qcm' ? 'QCM - 20 questions' : 'Texte à trous'}
+                {getExerciseTitle(generatedExercise.type)}
               </h2>
               <span className="text-sm text-gray-500">
                 Niveau: {niveauCECRL}
@@ -1855,6 +2037,274 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               </>
             )}
 
+            {/* TRADUCTION */}
+            {generatedExercise.type === 'traduction' && (
+              <div className="bg-purple-50 p-4 rounded-md space-y-4">
+                <div className="flex items-center gap-2 text-purple-700">
+                  <span className="font-medium">
+                    {generatedExercise.direction === 'fr-de' ? 'Français → Allemand' : 'Allemand → Français'}
+                  </span>
+                </div>
+                <p className="text-lg text-purple-800 bg-white p-3 rounded-md">
+                  {generatedExercise.sentence}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Votre traduction
+                  </label>
+                  <textarea
+                    value={translationAnswer}
+                    onChange={(e) => setTranslationAnswer(e.target.value)}
+                    placeholder={`Traduisez la phrase ci-dessus en ${generatedExercise.direction === 'fr-de' ? 'allemand' : 'français'}...`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[100px]"
+                    rows={4}
+                  />
+                </div>
+                {generatedExercise.context && (
+                  <p className="text-xs text-purple-500">{generatedExercise.context}</p>
+                )}
+              </div>
+            )}
+
+            {/* QUESTIONS OUVERTES */}
+            {generatedExercise.type === 'questionsOuvertes' && (
+              <div className="bg-green-50 p-4 rounded-md space-y-4">
+                <p className="text-lg text-green-800 bg-white p-3 rounded-md">
+                  {generatedExercise.question}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ihre Antwort (Répondez en allemand)
+                  </label>
+                  <textarea
+                    value={openQuestionAnswer}
+                    onChange={(e) => setOpenQuestionAnswer(e.target.value)}
+                    placeholder="Schreiben Sie Ihre Antwort hier auf Deutsch..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[120px]"
+                    rows={5}
+                  />
+                </div>
+                <p className="text-xs text-green-600">
+                  Niveau: {generatedExercise.difficulty}
+                </p>
+              </div>
+            )}
+
+            {/* REMISE EN ORDRE */}
+            {generatedExercise.type === 'remiseEnOrdre' && (
+              <div className="bg-orange-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-orange-800">
+                  Remettez les mots dans l'ordre pour former une phrase correcte
+                </h3>
+                <p className="text-sm text-orange-600">
+                  {generatedExercise.grammaticalRule}
+                </p>
+                <div className="bg-white p-4 rounded-md border border-orange-200">
+                  <div className="text-center mb-4">
+                    <strong>Mots disponibles :</strong>
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {generatedExercise.words.map((word, index) => {
+                      const isSelected = reorderSelected.includes(word);
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            if (isSelected) {
+                              // Retirer du sélection
+                              setReorderSelected(prev => prev.filter(w => w !== word));
+                            } else {
+                              // Ajouter au sélection
+                              setReorderSelected(prev => [...prev, word]);
+                            }
+                          }}
+                          className={`px-3 py-2 rounded-md border-2 transition-colors
+                            ${isSelected 
+                              ? 'bg-orange-100 border-orange-500 text-orange-800' 
+                              : 'bg-white border-gray-200 text-gray-700 hover:border-orange-300'}`}
+                        >
+                          {word}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-6 text-center">
+                    <strong>Votre phrase :</strong>
+                    <p className="text-orange-700 mt-2 min-h-[40px]">
+                      {reorderSelected.length > 0 ? reorderSelected.join(' ') : 'Sélectionnez les mots dans le bon ordre'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CONJUGAISON */}
+            {generatedExercise.type === 'conjugaison' && (
+              <div className="bg-blue-50 p-4 rounded-md space-y-4">
+                <p className="text-lg text-blue-800">
+                  Conjuguez le verbe &laquo;{generatedExercise.verb}&raquo; avec le pronom &laquo;{generatedExercise.pronoun}&raquo; au {generatedExercise.tense}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Votre réponse
+                  </label>
+                  <input
+                    type="text"
+                    value={conjugationAnswer}
+                    onChange={(e) => setConjugationAnswer(e.target.value)}
+                    placeholder="Ex: gehe, ging, bin gegangen..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-lg"
+                  />
+                </div>
+                <p className="text-sm text-blue-600">
+                  {generatedExercise.ruleExplanation}
+                </p>
+              </div>
+            )}
+
+            {/* COMPLÉTION DE DIALOGUE */}
+            {generatedExercise.type === 'completionDialogue' && (
+              <div className="bg-pink-50 p-4 rounded-md space-y-4">
+                <p className="text-lg text-pink-800">{generatedExercise.context}</p>
+                <div className="bg-white p-4 rounded-md border border-pink-200 space-y-4">
+                  {generatedExercise.dialogue.map((line: any, index) => (
+                    <div key={index} className="flex gap-3">
+                      <span className="font-medium text-pink-600 w-8">{line.speaker} :</span>
+                      {line.isBlank ? (
+                        <input
+                          type="text"
+                          value={dialogueAnswers[index] || ''}
+                          onChange={(e) => {
+                            const newAnswers = [...dialogueAnswers];
+                            newAnswers[index] = e.target.value;
+                            setDialogueAnswers(newAnswers);
+                          }}
+                          placeholder="Votre réponse..."
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                        />
+                      ) : (
+                        <span className="flex-1 py-2 text-gray-700">{line.text}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ASSOCIATION */}
+            {generatedExercise.type === 'association' && (
+              <div className="bg-indigo-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-indigo-800">
+                  Associez chaque mot/expression à sa définition
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-md border border-indigo-200">
+                    <h4 className="font-medium text-indigo-700 mb-2">Allemagne</h4>
+                    <div className="space-y-2">
+                      {generatedExercise.leftColumn.map((word, index) => (
+                        <div key={index} className="p-2 bg-indigo-50 rounded-md text-indigo-800">
+                          {word}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-white p-3 rounded-md border border-indigo-200">
+                    <h4 className="font-medium text-indigo-700 mb-2">Définitions</h4>
+                    <div className="space-y-2">
+                      {generatedExercise.rightColumn.map((def, index) => (
+                        <div key={index} className="p-2 bg-indigo-50 rounded-md text-indigo-800">
+                          {def}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-md border border-indigo-200">
+                  <h4 className="font-medium text-indigo-700 mb-3">
+                    Faites glisser ou cliquez pour associer
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {generatedExercise.leftColumn.map((leftWord, leftIndex) => (
+                      <select
+                        key={leftIndex}
+                        value={associationPairs.find(p => p[0] === leftIndex)?.[1] || ''}
+                        onChange={(e) => {
+                          const rightIndex = Number(e.target.value);
+                          const newPairs = associationPairs.filter(p => p[0] !== leftIndex);
+                          if (rightIndex !== -1) {
+                            newPairs.push([leftIndex, rightIndex]);
+                          }
+                          setAssociationPairs(newPairs);
+                        }}
+                        className="w-full px-2 py-1 border border-gray-300 rounded-md text-sm"
+                      >
+                        <option value="">-- Sélectionner --</option>
+                        {generatedExercise.rightColumn.map((_, rightIndex) => (
+                          <option key={rightIndex} value={rightIndex}>
+                            {generatedExercise.rightColumn[rightIndex]}
+                          </option>
+                        ))}
+                      </select>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* DICTÉE */}
+            {generatedExercise.type === 'dictee' && (
+              <div className="bg-red-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-red-800">
+                  Dictée - Écoutez et écrivez
+                </h3>
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        const utterance = new SpeechSynthesisUtterance(generatedExercise.sentence);
+                        utterance.lang = 'de-DE';
+                        utterance.rate = 0.7;
+                        utterance.onstart = () => setIsPlayingDictation(true);
+                        utterance.onend = () => setIsPlayingDictation(false);
+                        window.speechSynthesis.speak(utterance);
+                      }
+                    }}
+                    disabled={isPlayingDictation}
+                    className={`px-4 py-2 rounded-md text-white font-medium transition-colors
+                      ${isPlayingDictation ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 cursor-pointer'}`}
+                  >
+                    {isPlayingDictation ? '⏳ Lecture en cours...' : '🔊 Écouter la phrase'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        window.speechSynthesis.cancel();
+                        setIsPlayingDictation(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                  >
+                    ⏹ Arrêter
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Écrivez ce que vous entendez
+                  </label>
+                  <textarea
+                    value={dictationAnswer}
+                    onChange={(e) => setDictationAnswer(e.target.value)}
+                    placeholder="Écrivez la phrase en allemand..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 min-h-[100px]"
+                    rows={4}
+                  />
+                </div>
+                <p className="text-xs text-red-600">
+                  Conseils : écoutez attentivement, notez les mots que vous comprenez, puis écoutez à nouveau.
+                </p>
+              </div>
+            )}
+
             {/* Boutons */}
             <div className="flex gap-3">
               <button
@@ -1865,13 +2315,9 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               </button>
               <button
                 onClick={correctExercise}
-                disabled={
-                  (generatedExercise.type === 'qcm' && Object.keys(qcmAnswers).length < generatedExercise.questions.length) ||
-                  (generatedExercise.type === 'texteATrous' && !textAnswer.trim()) ||
-                  isLoading
-                }
+                disabled={getIsExerciseComplete()}
                 className={`px-6 py-2 rounded-md text-white font-medium flex-1 
-                  ${(generatedExercise.type === 'qcm' ? Object.keys(qcmAnswers).length === generatedExercise.questions.length : textAnswer.trim() !== '') && !isLoading 
+                  ${!getIsExerciseComplete() 
                     ? 'bg-green-600 hover:bg-green-700 cursor-pointer' 
                     : 'bg-green-300 cursor-not-allowed'}
                   transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
@@ -1882,7 +2328,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                     Correction en cours...
                   </>
                 ) : (
-                  `Valider mes réponses (${generatedExercise.type === 'qcm' ? generatedExercise.questions.length : '1'} question${generatedExercise.type === 'qcm' ? 's' : ''})`
+                  `Valider mes réponses (${getQuestionCount()} question${getQuestionCount() > 1 ? 's' : ''})`
                 )}
               </button>
             </div>
