@@ -106,6 +106,15 @@ interface DictationExercise {
   words: string[]; // Mots individuels pour la correction
 }
 
+/** Type pour un exercice de production écrite */
+interface ProductionExercise {
+  type: 'production';
+  question: string;
+  textWithBlanks?: string;
+  correctAnswer?: string[];
+  explanation?: string;
+}
+
 // ============================================================================
 // TYPES UNION
 // ============================================================================
@@ -120,7 +129,8 @@ type GeneratedExercise =
   | ConjugationExercise
   | DialogueCompletionExercise
   | AssociationExercise
-  | DictationExercise;
+  | DictationExercise
+  | ProductionExercise;
 
 /** Type pour la réponse de Mistral (génération) */
 interface MistralExerciseResponse {
@@ -398,6 +408,7 @@ export default function ExercicesPage() {
     
     switch (generatedExercise.type) {
       case 'qcm': return generatedExercise.questions.length;
+      case 'production': return 1;
       default: return 1;
     }
   }, [generatedExercise]);
@@ -754,7 +765,9 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
             exercise = {
               type: 'traduction',
               sentence: String(exerciseData.sentence || ''),
-              direction: String(exerciseData.direction || 'fr-de'),
+              direction: (exerciseData.direction === 'de-fr' || exerciseData.direction === 'fr-de') 
+                ? exerciseData.direction 
+                : 'fr-de',
               correctTranslation: String(exerciseData.correctTranslation || ''),
               context: String(exerciseData.context || ''),
             };
@@ -1416,8 +1429,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             correctionResult = {
               totalScore: dialogueCorrection.score,
               totalQuestions: dialogueCorrection.corrections.length,
-              correctCount: dialogueCorrection.corrections.filter(c => c.isCorrect).length,
-              corrections: dialogueCorrection.corrections.map((c, i) => ({
+              correctCount: dialogueCorrection.corrections.filter((c: {isCorrect: boolean}) => c.isCorrect).length,
+              corrections: dialogueCorrection.corrections.map((c: {isCorrect: boolean; userAnswer: string; correctAnswer: string}, i: number) => ({
                 questionIndex: i,
                 isCorrect: c.isCorrect,
                 userAnswer: c.userAnswer,
@@ -1460,8 +1473,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             correctionResult = {
               totalScore: dictationCorrection.score,
               totalQuestions: dictationCorrection.wordCorrections.length,
-              correctCount: dictationCorrection.wordCorrections.filter(w => w.isCorrect).length,
-              corrections: dictationCorrection.wordCorrections.map((wc, i) => ({
+              correctCount: dictationCorrection.wordCorrections.filter((w: {isCorrect: boolean}) => w.isCorrect).length,
+              corrections: dictationCorrection.wordCorrections.map((wc: {isCorrect: boolean; expected: string; actual: string}, i: number) => ({
                 questionIndex: i,
                 isCorrect: wc.isCorrect,
                 userAnswer: wc.actual,
@@ -1472,6 +1485,9 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           }
           break;
         case 'production':
+          // Correction par défaut pour production
+          correctionResult = correctTextExercise();
+          break;
         default:
           // Correction par défaut
           correctionResult = correctTextExercise();
@@ -1633,10 +1649,18 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           break;
 
         case 'production':
-        default:
           contenuJSON = {
-            type: generatedExercise.type,
+            type: 'production',
             question: (generatedExercise as any).question,
+          };
+          reponseUtilisateur = textAnswer;
+          correctionText = `Score: ${score}/100`;
+          break;
+        default:
+          // Ce cas ne devrait jamais arriver, mais on le gère pour la sécurité
+          contenuJSON = {
+            type: 'texteATrous' as ExerciceType,
+            question: (generatedExercise as GeneratedExercise).type,
           };
           reponseUtilisateur = textAnswer;
           correctionText = `Score: ${score}/100`;
@@ -2399,6 +2423,349 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               </div>
             )}
 
+            {/* TRADUCTION */}
+            {generatedExercise.type === 'traduction' && translationCorrection && (
+              <div className="bg-purple-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-purple-700 mb-3">Correction de la traduction</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-purple-200">
+                  <p className="text-sm text-gray-600 mb-1">Phrase à traduire</p>
+                  <p className="font-medium text-gray-800">{generatedExercise.sentence}</p>
+                  <p className="text-sm text-purple-600 mt-2">
+                    Direction: {generatedExercise.direction === 'fr-de' ? 'Français → Allemand' : 'Allemand → Français'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-md border border-purple-200">
+                    <p className="text-sm text-gray-600 mb-1">Votre traduction</p>
+                    <p className="font-medium text-gray-800">{translationAnswer || 'Aucune réponse'}</p>
+                  </div>
+                  <div className="bg-white p-3 rounded-md border border-green-200">
+                    <p className="text-sm text-gray-600 mb-1">Traduction correcte</p>
+                    <p className="font-medium text-green-700">{translationCorrection.traductionCorrecte}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-purple-200">
+                  <p className="text-sm text-gray-600 mb-2">Score: <span className="font-bold text-purple-700">{translationCorrection.score}/100</span></p>
+                </div>
+
+                {translationCorrection.erreurs.length > 0 && (
+                  <div className="bg-red-50 p-3 rounded-md border border-red-200">
+                    <p className="text-sm text-red-700 mb-2">Erreurs identifiées :</p>
+                    <ul className="list-disc list-inside text-red-700 text-sm space-y-1">
+                      {translationCorrection.erreurs.map((erreur, index) => (
+                        <li key={index}>{erreur}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {translationCorrection.conseils && (
+                  <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
+                    <p className="text-sm text-blue-700 mb-2">Conseils pour améliorer :</p>
+                    <p className="text-blue-700 text-sm whitespace-pre-wrap">{translationCorrection.conseils}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* QUESTIONS OUVERTES */}
+            {generatedExercise.type === 'questionsOuvertes' && openQuestionCorrection && (
+              <div className="bg-orange-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-orange-700 mb-3">Correction de la question ouverte</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-orange-200">
+                  <p className="text-sm text-gray-600 mb-1">Question</p>
+                  <p className="font-medium text-gray-800">{generatedExercise.question}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-md border border-orange-200">
+                    <p className="text-sm text-gray-600 mb-1">Votre réponse</p>
+                    <p className="font-medium text-gray-800">{openQuestionAnswer || 'Aucune réponse'}</p>
+                  </div>
+                  <div className="bg-white p-3 rounded-md border border-green-200">
+                    <p className="text-sm text-gray-600 mb-1">Réponse attendue</p>
+                    <p className="font-medium text-green-700">{generatedExercise.expectedAnswer}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-orange-200">
+                  <p className="text-sm text-gray-600 mb-2">Score: <span className="font-bold text-orange-700">{openQuestionCorrection.score}/100</span></p>
+                </div>
+
+                {openQuestionCorrection.retour && (
+                  <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
+                    <p className="text-sm text-blue-700 mb-2">Retour détaillé :</p>
+                    <p className="text-blue-700 text-sm whitespace-pre-wrap">{openQuestionCorrection.retour}</p>
+                  </div>
+                )}
+
+                {openQuestionCorrection.explicationComplete && (
+                  <div className="bg-green-50 p-3 rounded-md border border-green-200">
+                    <p className="text-sm text-green-700 mb-2">Explication complète :</p>
+                    <p className="text-green-700 text-sm whitespace-pre-wrap">{openQuestionCorrection.explicationComplete}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* REMISE EN ORDRE */}
+            {generatedExercise.type === 'remiseEnOrdre' && reorderCorrection && (
+              <div className="bg-cyan-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-cyan-700 mb-3">Correction de la remise en ordre</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-cyan-200">
+                  <p className="text-sm text-gray-600 mb-2">Votre proposition</p>
+                  <p className="font-medium text-cyan-800">
+                    {reorderSelected.join(' ') || 'Aucune réponse'}
+                  </p>
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-green-200">
+                  <p className="text-sm text-gray-600 mb-2">Phrase correcte</p>
+                  <p className="font-medium text-green-700">{reorderCorrection.correctSentence}</p>
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-cyan-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Résultat: <span className={`font-bold ${reorderCorrection.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                      {reorderCorrection.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Score: <span className="font-bold text-cyan-700">{reorderCorrection.score}/100</span>
+                  </p>
+                </div>
+
+                {reorderCorrection.grammaticalExplanation && (
+                  <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200">
+                    <p className="text-sm text-yellow-700 mb-2">Explication grammaticale :</p>
+                    <p className="text-yellow-700 text-sm whitespace-pre-wrap">{reorderCorrection.grammaticalExplanation}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONJUGAISON */}
+            {generatedExercise.type === 'conjugaison' && conjugationCorrection && (
+              <div className="bg-pink-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-pink-700 mb-3">Correction de la conjugaison</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-pink-200">
+                  <p className="text-sm text-gray-600 mb-1">Verbe à conjuguer</p>
+                  <p className="font-medium text-gray-800">
+                    {generatedExercise.verb} - {generatedExercise.pronoun} - {generatedExercise.tense}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-md border border-pink-200">
+                    <p className="text-sm text-gray-600 mb-1">Votre réponse</p>
+                    <p className="font-medium text-pink-800">{conjugationAnswer || 'Aucune réponse'}</p>
+                  </div>
+                  <div className="bg-white p-3 rounded-md border border-green-200">
+                    <p className="text-sm text-gray-600 mb-1">Forme correcte</p>
+                    <p className="font-medium text-green-700">{conjugationCorrection.correctForm}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-pink-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Résultat: <span className={`font-bold ${conjugationCorrection.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                      {conjugationCorrection.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Score: <span className="font-bold text-pink-700">{conjugationCorrection.score}/100</span>
+                  </p>
+                </div>
+
+                {conjugationCorrection.ruleExplanation && (
+                  <div className="bg-purple-50 p-3 rounded-md border border-purple-200">
+                    <p className="text-sm text-purple-700 mb-2">Explication de la règle :</p>
+                    <p className="text-purple-700 text-sm whitespace-pre-wrap">{conjugationCorrection.ruleExplanation}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* DIALOGUE */}
+            {generatedExercise.type === 'completionDialogue' && dialogueCorrection && (
+              <div className="bg-indigo-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-indigo-700 mb-3">Correction du dialogue</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-indigo-200">
+                  <p className="text-sm text-gray-600 mb-2">Contexte: {generatedExercise.context}</p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-indigo-700">Correction par réplique :</h4>
+                  {dialogueCorrection.corrections.map((corr, index) => {
+                    const dialogueLine = generatedExercise.dialogue.find((_, i) => i === corr.blankIndex);
+                    return (
+                      <div
+                        key={index}
+                        className={`p-3 rounded-md border-l-4 ${corr.isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                      >
+                        <p className="text-sm text-gray-600 mb-1">
+                          Réplique {index + 1} ({dialogueLine?.speaker || '?'})
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Votre réponse:</p>
+                            <p className={`font-medium ${corr.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                              {corr.userAnswer || 'Non répondue'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Version correcte:</p>
+                            <p className="font-medium text-green-700">{corr.correctAnswer}</p>
+                          </div>
+                        </div>
+                        <p className={`text-xs mt-1 ${corr.isCorrect ? 'text-green-600' : 'text-red-600'}`}>
+                          {corr.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="bg-white p-3 rounded-md border border-indigo-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Score global: <span className="font-bold text-indigo-700">{dialogueCorrection.score}/100</span>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Réponses correctes: {dialogueCorrection.corrections.filter(c => c.isCorrect).length}/{dialogueCorrection.corrections.length}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ASSOCIATION */}
+            {generatedExercise.type === 'association' && associationCorrection && (
+              <div className="bg-emerald-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-emerald-700 mb-3">Correction de l'association</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-emerald-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Score: <span className="font-bold text-emerald-700">{associationCorrection.score}/100</span>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Paires correctes: {correction.correctCount}/{correction.totalQuestions}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-emerald-700">Corrections par paire :</h4>
+                  {associationCorrection.correctPairs.map(([leftIndex, rightIndex], pairIndex) => {
+                    const leftWord = generatedExercise.leftColumn[leftIndex];
+                    const rightDef = generatedExercise.rightColumn[rightIndex];
+                    const isUserCorrect = associationCorrection.userPairs.some(
+                      u => u[0] === leftIndex && u[1] === rightIndex
+                    );
+                    
+                    return (
+                      <div
+                        key={pairIndex}
+                        className={`p-3 rounded-md border-l-4 ${isUserCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Mot allemand:</p>
+                            <p className="font-medium text-emerald-800">{leftWord}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Définition/Traduction:</p>
+                            <p className="font-medium text-emerald-800">{rightDef}</p>
+                          </div>
+                        </div>
+                        <p className={`text-xs mt-1 ${isUserCorrect ? 'text-green-600' : 'text-red-600'}`}>
+                          {isUserCorrect ? '✓ Paire correcte' : '✗ Paire incorrecte ou manquante'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* DICTÉE */}
+            {generatedExercise.type === 'dictee' && dictationCorrection && (
+              <div className="bg-rose-50 p-4 rounded-md space-y-4">
+                <h3 className="font-medium text-rose-700 mb-3">Correction de la dictée</h3>
+                
+                <div className="bg-white p-3 rounded-md border border-rose-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Score: <span className="font-bold text-rose-700">{dictationCorrection.score}/100</span>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Mots corrects: {dictationCorrection.wordCorrections.filter(w => w.isCorrect).length}/{dictationCorrection.wordCorrections.length}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-rose-700">Comparaison mot par mot :</h4>
+                  
+                  <div className="bg-white p-3 rounded-md border border-rose-200">
+                    <p className="text-xs text-gray-500 mb-2">Votre version :</p>
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {dictationCorrection.wordCorrections.map((wc, index) => (
+                        <span
+                          key={index}
+                          className={`px-2 py-1 rounded text-sm ${wc.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                        >
+                          {wc.actual}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-green-50 p-3 rounded-md border border-green-200">
+                    <p className="text-xs text-gray-500 mb-2">Version correcte :</p>
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {dictationCorrection.wordCorrections.map((wc, index) => (
+                        <span
+                          key={index}
+                          className="px-2 py-1 rounded text-sm bg-green-100 text-green-800"
+                        >
+                          {wc.expected}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-rose-700">Détails par mot :</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {dictationCorrection.wordCorrections.map((wc, index) => (
+                        <div
+                          key={index}
+                          className={`p-2 rounded border text-xs ${wc.isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}
+                        >
+                          <p className="font-medium mb-1">
+                            Mot {index + 1}: <span className={wc.isCorrect ? 'text-green-700' : 'text-red-700'}>
+                              {wc.actual}
+                            </span>
+                          </p>
+                          {!wc.isCorrect && (
+                            <p className="text-red-600">
+                              Attendu: <span className="font-medium">{wc.expected}</span>
+                            </p>
+                          )}
+                          <p className={wc.isCorrect ? 'text-green-600' : 'text-red-600'}>
+                            {wc.isCorrect ? '✓ Correct' : '✗ Erreur'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Sauvegarde */}
             {step === 'correcting' && (
               <button
@@ -2426,11 +2793,25 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                     setGeneratedExercise(null);
                     setQcmAnswers({});
                     setTextAnswer('');
+                    setTranslationAnswer('');
+                    setOpenQuestionAnswer('');
+                    setReorderSelected([]);
+                    setConjugationAnswer('');
+                    setDialogueAnswers([]);
+                    setAssociationPairs([]);
+                    setDictationAnswer('');
                     setCorrection(null);
+                    setTranslationCorrection(null);
+                    setOpenQuestionCorrection(null);
+                    setReorderCorrection(null);
+                    setConjugationCorrection(null);
+                    setDialogueCorrection(null);
+                    setAssociationCorrection(null);
+                    setDictationCorrection(null);
                   }}
                   className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
                 >
-                  Faire un autre exercice
+                  Nouvel exercice
                 </button>
               </div>
             )}
