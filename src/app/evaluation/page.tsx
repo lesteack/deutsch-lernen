@@ -2,18 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  getTextesSupport,
   getAllLecons,
   getProgression,
   addEvaluation,
+  type Lecon,
   type TexteSupport,
   type TexteSupportType,
   type Evaluation,
   type CritereEvaluation,
-  type Lecon,
   type NiveauCECRL,
 } from '@/lib/storage';
-import { predefinedThemes, themeToContext, getRandomTheme, normalizeTheme } from '@/lib/themes';
+import { predefinedThemes } from '@/lib/themes';
 
 // ============================================================================
 // TYPES
@@ -29,10 +28,16 @@ interface ComprehensionQuestion {
   explication: string;
 }
 
-/** Type pour une évaluation de compréhension */
-interface ComprehensionEvaluation {
+/** Type pour le texte généré par Mistral */
+interface GeneratedText {
   texte: string;
   titre: string;
+  vocabulaireCle: string[];
+}
+
+/** Type pour une évaluation de compréhension */
+interface ComprehensionEvaluation {
+  generatedText: GeneratedText;
   questions: ComprehensionQuestion[];
 }
 
@@ -65,51 +70,7 @@ interface OralCorrection {
 type ThemeSource = 'cours' | 'libre';
 
 /** Étapes du flux d'évaluation */
-type EvaluationStep = 'setup' | 'reading' | 'answering' | 'recording' | 'correcting' | 'saved';
-
-// ============================================================================
-// TEXTE DE DÉMONSTRATION
-// ============================================================================
-
-const demoTextEcrite: TexteSupport = {
-  id: 'demo-ecrit',
-  titre: 'Texte de démonstration - Compréhension écrite',
-  type: 'ecrit',
-  contenu: `Guten Tag! Ich heiße Anna und ich komme aus Berlin. Berlin ist die Hauptstadt von Deutschland und eine sehr lebendige Stadt.
-
-Ich wohne in einem kleinen Haus mit meinem Hund Max. Max ist ein intelligenter und freundlicher Hund. Jeden Morgen gehe ich mit Max im Park spazieren. Der Park ist sehr schön und groß. Dort gibt es viele Bäume, Blumen und einen kleinen See.
-
-Am Wochenende besuche ich oft meine Freunde. Wir trinken Kaffee und reden über verschiedene Themen. Manchmal gehen wir ins Kino oder in ein Restaurant. Ich liebe die deutsche Küche, besonders die Bratwurst mit Sauerkraut.
-
-In Berlin gibt es viele interessante Orte zu besichtigen: das Brandenburger Tor, den Fernsehturm und viele Museen. Ich arbeite als Lehrerin in einer Grundschule. Meine Schüler sind sehr nett und fleißig. Ich unterrichte Mathe und Deutsch.
-
-Ich reise auch gern. Letztes Jahr war ich in München und Hamburg. Nächstes Jahr möchte ich nach Österreich fahren, um die Berge zu sehen.
-
-Das ist mein Leben in Deutschland!`,
-  niveauCECRL: 'A2',
-  notionsCles: ['präsentieren', 'wohnort', 'familie', 'beruf', 'reisen', 'deutschland'],
-};
-
-const demoTextOral: TexteSupport = {
-  id: 'demo-audio',
-  titre: 'Texte de démonstration - Compréhension orale',
-  type: 'audio',
-  contenu: `Hallo! Mein Name ist Thomas. Ich bin 25 Jahre alt und ich studiere Medizin an der Universität Heidelberg.
-
-Heute möchte ich über meinen Tagesablauf erzählen. Um sieben Uhr stehe ich auf. Dann dusche ich und ziehe mich an. Um halb acht frühstücke ich: ich trinke einen Kaffee und esse ein Brot mit Marmelade.
-
-Um acht Uhr beginne ich mit dem Lernen. Ich lese Bücher und mache Übungen. Um zwölf Uhr habe ich eine Pause. Ich esse ein Sandwich und trinke Wasser. Dann lerne ich weiter bis vier Uhr nachmittags.
-
-Nach dem Lernen gehe ich oft zum Sport. Ich spiele Fußball oder gehe schwimmen. Das macht mir viel Spaß und es ist gut für die Gesundheit.
-
-Am Abend koche ich für meine Mitbewohner. Wir essen zusammen und reden über unseren Tag. Manchmal schauen wir einen Film oder spielen Gesellschaftsspiele.
-
-Um elf Uhr gehe ich ins Bett. Ich schlafe sehr gut, weil ich einen anstrengenden aber schönen Tag hatte.
-
-Das war mein typischer Tag als Student.`,
-  niveauCECRL: 'A2',
-  notionsCles: ['tagesablauf', 'studium', 'essen', 'sport', 'gesundheit', 'freizeit'],
-};
+type EvaluationStep = 'setup' | 'generatingText' | 'answering' | 'recording' | 'correcting' | 'saved';
 
 // ============================================================================
 // CONSTANTES
@@ -171,10 +132,13 @@ export default function EvaluationPage() {
   const [niveauCECRL, setNiveauCECRL] = useState<NiveauCECRL>('A1');
   
   // État pour la compréhension écrite/orale
+  const [generatedText, setGeneratedText] = useState<GeneratedText | null>(null);
   const [evaluationData, setEvaluationData] = useState<ComprehensionEvaluation | null>(null);
   const [step, setStep] = useState<EvaluationStep>('setup');
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [score, setScore] = useState<number | null>(null);
+  const [showText, setShowText] = useState(false);
+  const [vocabularyTranslations, setVocabularyTranslations] = useState<Record<string, string>>({});
   
   // État pour l'expression écrite
   const [expressionSubject, setExpressionSubject] = useState<ExpressionSubject | null>(null);
@@ -213,6 +177,7 @@ export default function EvaluationPage() {
   // Réinitialiser lors du changement d'onglet
   useEffect(() => {
     setStep('setup');
+    setGeneratedText(null);
     setEvaluationData(null);
     setExpressionSubject(null);
     setOralSubject(null);
@@ -220,9 +185,11 @@ export default function EvaluationPage() {
     setWrittenAnswer('');
     setTranscript('');
     setScore(null);
+    setShowText(false);
     setWrittenCorrection(null);
     setOralCorrection(null);
     setError(null);
+    setVocabularyTranslations({});
   }, [activeTab]);
 
   // ==========================================================================
@@ -245,12 +212,13 @@ export default function EvaluationPage() {
   /**
    * Récupère le contexte/thème actuel
    */
-  const getCurrentContext = useCallback((): { type: 'lecon' | 'theme'; value: string; title: string } => {
+  const getCurrentContext = useCallback((): { type: 'lecon' | 'theme'; value: string; title: string; vocabulaire?: string[] } => {
     if (themeSource === 'cours' && selectedLecon) {
       return {
         type: 'lecon',
         value: selectedLecon.contenuTexte,
         title: `Basé sur : ${selectedLecon.titre}`,
+        vocabulaire: selectedLecon.notionsCles,
       };
     } else {
       const finalTheme = customTheme.trim() || selectedTheme;
@@ -263,47 +231,191 @@ export default function EvaluationPage() {
   }, [themeSource, selectedLecon, selectedTheme, customTheme]);
 
   // ==========================================================================
+  // GÉNÉRATION DU TEXTE (CO/CE)
+  // ==========================================================================
+
+  /**
+   * Génère un NOUVEAU texte via Mistral
+   * NE PAS utiliser le contenu brut de la leçon
+   */
+  const generateText = useCallback(async () => {
+    const context = getCurrentContext();
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      let prompt: string;
+
+      if (context.type === 'lecon') {
+        // Basé sur le vocabulaire de la leçon
+        const vocabulaire = context.vocabulaire?.join(', ') || '';
+        prompt = `Tu es un professeur d'allemand. Crée un NOUVEAU texte en allemand de 150-200 mots pour un élève de niveau ${niveauCECRL}.
+
+---
+Thème basé sur la leçon: ${selectedLecon?.titre || 'Inconnu'}
+Vocabulaire à réutiliser: ${vocabulaire}
+Niveau: ${niveauCECRL}
+---
+
+Le texte doit :
+- Être ORIGINAL et NOUVEAU (ne pas copier le contenu de la leçon)
+- Contenir 150-200 mots
+- Utiliser le vocabulaire fourni
+- Être adapté au niveau spécifié
+- Être clair et pédagogique
+
+Réponds avec UN SEUL objet JSON :
+{
+  "texte": "[texte en allemand original]",
+  "titre": "[titre en français]",
+  "vocabulaireCle": ["mot1", "mot2", "mot3", ...]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+      } else {
+        // Basé sur un thème libre
+        prompt = `Tu es un professeur d'allemand. Crée un NOUVEAU texte en allemand de 150-200 mots sur le thème suivant, pour un élève de niveau ${niveauCECRL}.
+
+---
+Thème: ${context.value}
+Niveau: ${niveauCECRL}
+---
+
+Le texte doit :
+- Être ORIGINAL et NOUVEAU
+- Contenir 150-200 mots
+- Porter sur le thème spécifié
+- Être adapté au niveau
+- Être clair et pédagogique
+
+Réponds avec UN SEUL objet JSON :
+{
+  "texte": "[texte en allemand original]",
+  "titre": "[titre en français]",
+  "vocabulaireCle": ["mot1", "mot2", "mot3", ...]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+      }
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la génération du texte');
+      }
+
+      const data = await response.json();
+      
+      // Valider la réponse
+      if (!data.texte || !data.titre || !data.vocabulaireCle) {
+        throw new Error('Réponse Mistral invalide : texte, titre ou vocabulaireCle manquant');
+      }
+
+      const newText: GeneratedText = {
+        texte: String(data.texte),
+        titre: String(data.titre),
+        vocabulaireCle: Array.isArray(data.vocabulaireCle) 
+          ? data.vocabulaireCle.map(String) 
+          : [String(data.vocabulaireCle)],
+      };
+
+      setGeneratedText(newText);
+      setStep('answering');
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de générer le texte : ${errorMessage}`);
+      setStep('setup');
+      setIsLoading(false);
+    }
+  }, [getCurrentContext, niveauCECRL, selectedLecon]);
+
+  // ==========================================================================
+  // TRADUCTION DU VOCABULAIRE
+  // ==========================================================================
+
+  /**
+   * Traduit le vocabulaire clé en français via Mistral
+   */
+  const translateVocabulary = useCallback(async (words: string[]) => {
+    if (words.length === 0) return;
+
+    try {
+      const prompt = `Tu es un traducteur allemand-français. Traduis ces mots en allemand en français.
+
+---
+Mots à traduire: ${words.join(', ')}
+---
+
+Réponds avec UN SEUL objet JSON contenant les traductions :
+{
+  "${words[0]}": "traduction1",
+  "${words[1]}": "traduction2",
+  ...
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la traduction');
+      }
+
+      const data = await response.json();
+      setVocabularyTranslations(data);
+
+    } catch (err) {
+      console.error('Erreur lors de la traduction du vocabulaire:', err);
+      // On ne bloque pas, on garde les mots en allemand
+    }
+  }, []);
+
+  // ==========================================================================
   // GÉNÉRATION DES QUESTIONS (CO/CE)
   // ==========================================================================
 
   /**
    * Génère des questions de compréhension via Mistral
    */
-  const generateComprehensionQuestions = useCallback(async () => {
-    const context = getCurrentContext();
+  const generateQuestions = useCallback(async () => {
+    if (!generatedText) return;
+
     setIsLoading(true);
     setError(null);
-    setStep('answering');
 
     try {
-      let texte: string;
-      let titre: string;
-
-      if (context.type === 'lecon') {
-        texte = context.value;
-        titre = context.title;
-      } else {
-        // Pour un thème, générer un texte adapté
-        texte = context.value;
-        titre = context.title;
-        
-        // Si c'est un simple thème, créer un texte court pour Mistral
-        if (context.type === 'theme') {
-          texte = `Thème : ${context.value}. Crée un court texte en allemand (4-5 phrases) sur ce thème pour poser des questions de compréhension.`;
-          titre = context.title;
-        }
-      }
-
-      const prompt = `Tu es un professeur d'allemand. Crée UN SEUL message JSON contenant EXACTEMENT 5 questions de compréhension sur le contenu suivant.
+      const prompt = `Tu es un professeur d'allemand. Crée UN SEUL message JSON contenant EXACTEMENT 5 questions de compréhension sur le texte suivant.
 
 ---
-Titre: ${titre}
-Contenu: ${texte}
+Titre: ${generatedText.titre}
+Texte: ${generatedText.texte}
 Niveau: ${niveauCECRL}
 ---
 
 Chaque question doit avoir :
-- Une question claire en allemand (basée sur le contenu)
+- Une question claire en allemand (basée sur le contenu du texte)
 - 4 choix de réponse (1 correcte, 3 incorrectes mais plausibles)
 - La bonne réponse indiquée par son INDEX (0, 1, 2 ou 3)
 - Une explication pédagogique en français
@@ -360,25 +472,25 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
         };
       });
 
-      // Utiliser le texte original si disponible
-      const finalTexte = context.type === 'lecon' ? context.value : demoTextEcrite.contenu;
-      const finalTitre = context.title;
-
       setEvaluationData({
-        texte: finalTexte,
-        titre: finalTitre,
+        generatedText,
         questions: validQuestions,
       });
+      
+      // Précharger les traductions du vocabulaire
+      if (generatedText.vocabulaireCle.length > 0) {
+        translateVocabulary(generatedText.vocabulaireCle);
+      }
       
       setIsLoading(false);
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
       setError(`Impossible de générer les questions : ${errorMessage}`);
-      setStep('setup');
+      setStep('answering'); // Reste sur la même étape pour réessayer
       setIsLoading(false);
     }
-  }, [getCurrentContext, niveauCECRL]);
+  }, [generatedText, niveauCECRL, translateVocabulary]);
 
   // ==========================================================================
   // GÉNÉRATION DE SUJETS (EE/EO)
@@ -394,7 +506,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tab
 
     try {
       const contextText = context.type === 'lecon' 
-        ? `Basé sur cette leçon : ${context.value.substring(0, 500)}...`
+        ? `Basé sur cette leçon avec vocabulaire : ${context.vocabulaire?.join(', ') || 'aucun'}`
         : `Thème : ${context.value}`;
 
       const prompt = `Tu es un professeur d'allemand. Crée un sujet d'expression ${forOral ? 'orale' : 'écrite'} pour un élève de niveau ${niveauCECRL}.
@@ -497,8 +609,6 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
   // SPEECH RECOGNITION (EO)
   // ==========================================================================
 
-  // Note: SpeechRecognition n'est pas disponible dans Next.js côté serveur
-  // On utilise l'API du navigateur via window.SpeechRecognition ou webkitSpeechRecognition
   const startRecording = useCallback(() => {
     if (typeof window === 'undefined') {
       setError('La reconnaissance vocale n\'est pas disponible dans cet environnement');
@@ -761,10 +871,11 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
    */
   const saveEvaluation = useCallback((finalScore: number, critere: CritereEvaluation) => {
     try {
+      const context = getCurrentContext();
       const newEvaluation: Omit<Evaluation, 'id' | 'dateRealisation'> = {
         critere,
         portee: 'sequence',
-        sequenceCible: getCurrentContext().title,
+        sequenceCible: context.title,
         scoreGlobal: finalScore,
       };
 
@@ -889,6 +1000,10 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   <p className="text-sm text-gray-600 line-clamp-2">
                     {selectedLecon.contenuTexte}
                   </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Vocabulaire : {selectedLecon.notionsCles.slice(0, 5).join(', ')}
+                    {selectedLecon.notionsCles.length > 5 && '...'}
+                  </p>
                 </div>
               ) : (
                 <p className="text-gray-500 text-sm">
@@ -970,7 +1085,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             <button
               onClick={() => {
                 if (activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') {
-                  generateComprehensionQuestions();
+                  generateText();
                 } else if (activeTab === 'expressionEcrite') {
                   generateExpressionSubject(false);
                 } else if (activeTab === 'expressionOrale') {
@@ -989,7 +1104,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   Génération en cours...
                 </>
               ) : (
-                `Générer ${activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ? 'les questions' : 'un sujet'}`
+                `Générer ${activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ? 'un texte' : 'un sujet'}`
               )}
             </button>
           )}
@@ -999,7 +1114,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       {/* ======================================================================
            COMPRÉHENSION ORALE
          ====================================================================== */}
-      {activeTab === 'comprehensionOrale' && step === 'answering' && evaluationData && (
+      {activeTab === 'comprehensionOrale' && step === 'answering' && generatedText && !evaluationData && (
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
@@ -1008,13 +1123,16 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
             </p>
+            <p className="text-xs text-gray-500">
+              Un texte a été généré. Écoutez-le attentivement.
+            </p>
           </div>
 
-          {/* Texte à écouter */}
+          {/* Texte CACHÉ par défaut */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <div className="flex gap-2 mb-4">
               <button
-                onClick={() => speakText(evaluationData.texte)}
+                onClick={() => speakText(generatedText.texte)}
                 disabled={isPlaying}
                 className={`px-4 py-2 rounded-md text-white font-medium transition-colors
                   ${isPlaying 
@@ -1035,6 +1153,13 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 )}
               </button>
               <button
+                onClick={() => setShowText(!showText)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center gap-2"
+              >
+                {showText ? '🙈' : '👁'}
+                {showText ? ' Cacher le texte' : ' Voir le texte'}
+              </button>
+              <button
                 onClick={stopSpeaking}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
               >
@@ -1042,80 +1167,47 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
               </button>
             </div>
             
-            <div className="max-h-48 overflow-y-auto">
-              <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                {evaluationData.texte}
-              </p>
-            </div>
-          </div>
-
-          {/* Questions */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium text-[#1e1b4b]">
-              Questions ({evaluationData.questions.length})
-            </h3>
-            
-            {evaluationData.questions.map((question, index) => (
-              <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="font-medium text-gray-800 mb-3">
-                  Question {index + 1}/{evaluationData.questions.length}
+            {showText && (
+              <div className="max-h-48 overflow-y-auto bg-white p-3 rounded-md">
+                <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                  {generatedText.texte}
                 </p>
-                <p className="text-gray-700 mb-4">{question.question}</p>
-                <div className="space-y-2">
-                  {question.choix.map((choice, choiceIndex) => (
-                    <label
-                      key={choiceIndex}
-                      className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
-                        ${answers[index] === choiceIndex 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${index}`}
-                        value={choiceIndex}
-                        checked={answers[index] === choiceIndex}
-                        onChange={(e) => {
-                          setAnswers(prev => ({
-                            ...prev,
-                            [index]: Number(e.target.value),
-                          }));
-                        }}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-gray-700">{choice}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
-            ))}
+            )}
+            
+            {!showText && (
+              <div className="text-center py-8 text-gray-400">
+                <p>Le texte est caché. Écoutez-le attentivement avant de répondre.</p>
+                <p className="text-xs mt-2">Vous pourrez le voir après avoir écouté.</p>
+              </div>
+            )}
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <button
-              onClick={() => speakText(evaluationData.texte)}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-            >
-              Réécouter
-            </button>
-            <button
-              onClick={correctComprehensionAnswers}
-              disabled={Object.keys(answers).length < evaluationData.questions.length}
-              className={`px-6 py-2 rounded-md text-white font-medium flex-1 transition-colors
-                ${Object.keys(answers).length === evaluationData.questions.length
-                  ? 'bg-green-600 hover:bg-green-700 cursor-pointer'
-                  : 'bg-green-300 cursor-not-allowed'}`}
-            >
-              Valider mes réponses
-            </button>
-          </div>
+          {/* Bouton pour générer les questions */}
+          <button
+            onClick={generateQuestions}
+            disabled={isLoading}
+            className={`w-full px-6 py-3 rounded-md text-white font-medium transition-colors
+              ${!isLoading 
+                ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
+                : 'bg-blue-300 cursor-not-allowed'}`}
+          >
+            {isLoading ? (
+              <>
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                Génération des questions...
+              </>
+            ) : (
+              'Générer les questions de compréhension'
+            )}
+          </button>
         </div>
       )}
 
       {/* ======================================================================
            COMPRÉHENSION ÉCRITE
          ====================================================================== */}
-      {activeTab === 'comprehensionEcrite' && step === 'answering' && evaluationData && (
+      {activeTab === 'comprehensionEcrite' && step === 'answering' && generatedText && !evaluationData && (
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
@@ -1124,16 +1216,115 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             <p className="text-gray-600 text-sm">
               {getCurrentContext().title}
             </p>
+            <p className="text-xs text-gray-500">
+              Un texte a été généré. Lisez-le attentivement.
+            </p>
           </div>
 
-          {/* Texte à lire */}
+          {/* Texte visible */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <div className="max-h-48 overflow-y-auto">
               <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                {evaluationData.texte}
+                {generatedText.texte}
               </p>
             </div>
           </div>
+
+          {/* Bouton pour générer les questions */}
+          <button
+            onClick={generateQuestions}
+            disabled={isLoading}
+            className={`w-full px-6 py-3 rounded-md text-white font-medium transition-colors
+              ${!isLoading 
+                ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' 
+                : 'bg-blue-300 cursor-not-allowed'}`}
+          >
+            {isLoading ? (
+              <>
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                Génération des questions...
+              </>
+            ) : (
+              'Générer les questions de compréhension'
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* ======================================================================
+           COMPRÉHENSION ORALE/ÉCRITE - QUESTIONS
+         ====================================================================== */}
+      {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && 
+       step === 'answering' && evaluationData && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold font-serif text-[#1e1b4b]">
+              Questions de compréhension
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {getCurrentContext().title}
+            </p>
+          </div>
+
+          {/* Texte (visible pour CE, masquable pour CO) */}
+          {activeTab === 'comprehensionOrale' && (
+            <div className="bg-orange-50 rounded-lg p-4 mb-6">
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => speakText(evaluationData.generatedText.texte)}
+                  disabled={isPlaying}
+                  className={`px-4 py-2 rounded-md text-white font-medium transition-colors
+                    ${isPlaying 
+                      ? 'bg-orange-400 cursor-not-allowed' 
+                      : 'bg-orange-600 hover:bg-orange-700 cursor-pointer'}
+                    flex items-center gap-2`}
+                >
+                  {isPlaying ? (
+                    <>
+                      <span className="animate-pulse">🔊</span>
+                      Lecture...
+                    </>
+                  ) : (
+                    <>
+                      <span>🔊</span>
+                      Réécouter
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowText(!showText)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex items-center gap-2"
+                >
+                  {showText ? '🙈' : '👁'}
+                  {showText ? ' Cacher' : ' Voir le texte'}
+                </button>
+              </div>
+              
+              {showText && (
+                <div className="max-h-48 overflow-y-auto bg-white p-3 rounded-md">
+                  <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                    {evaluationData.generatedText.texte}
+                  </p>
+                </div>
+              )}
+              
+              {!showText && (
+                <div className="text-center py-4 text-gray-400">
+                  <p>Le texte est caché. Utilisez le bouton ci-dessus pour le voir.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'comprehensionEcrite' && (
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <div className="max-h-48 overflow-y-auto">
+                <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                  {evaluationData.generatedText.texte}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Questions */}
           <div className="space-y-4">
@@ -1177,13 +1368,22 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             ))}
           </div>
 
+          {/* Indicateur de progression */}
+          <div className="text-sm text-gray-500">
+            {Object.keys(answers).length} questions répondus sur {evaluationData.questions.length}
+          </div>
+
+          {/* Boutons */}
           <div className="flex gap-3 pt-4">
-            <button
-              onClick={() => setStep('setup')}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-            >
-              Changer de thème
-            </button>
+            {activeTab === 'comprehensionOrale' && (
+              <button
+                onClick={() => speakText(evaluationData.generatedText.texte)}
+                disabled={isPlaying}
+                className="px-4 py-2 bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 transition-colors"
+              >
+                {isPlaying ? 'Lecture...' : '🔊 Réécouter'}
+              </button>
+            )}
             <button
               onClick={correctComprehensionAnswers}
               disabled={Object.keys(answers).length < evaluationData.questions.length}
@@ -1361,10 +1561,29 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             </div>
             <p className="text-gray-600">
               {activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite' ?
-                `${Math.round((score / 100) * (evaluationData?.questions.length || 5))}/${evaluationData?.questions.length || 5} bonnes réponses` :
+                `${Math.round((score / 100) * evaluationData?.questions.length || 5)}/${evaluationData?.questions.length || 5} bonnes réponses` :
                 `Score global`}
             </p>
           </div>
+
+          {/* Vocabulaire clé (pour CO/CE) */}
+          {(activeTab === 'comprehensionOrale' || activeTab === 'comprehensionEcrite') && 
+           evaluationData && evaluationData.generatedText.vocabulaireCle.length > 0 && (
+            <div className="bg-yellow-50 rounded-lg p-4">
+              <h3 className="font-medium text-yellow-800 mb-3">Vocabulaire clé du texte</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {evaluationData.generatedText.vocabulaireCle.map((word, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <span className="font-medium text-gray-700">{word}</span>
+                    <span className="text-gray-500">—</span>
+                    <span className="text-yellow-700">
+                      {vocabularyTranslations[word] || word}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Détails selon le type */}
           
