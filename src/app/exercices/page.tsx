@@ -39,13 +39,93 @@ interface GeneratedTextExercise {
   explanation: string;
 }
 
+// ============================================================================
+// NOUVEAUX TYPES POUR LES EXERCICES
+// ============================================================================
+
+/** Type pour un exercice de traduction */
+interface TranslationExercise {
+  type: 'traduction';
+  sentence: string; // Phrase à traduire
+  direction: 'fr-de' | 'de-fr'; // Direction de traduction
+  correctTranslation: string; // Traduction correcte
+  context?: string; // Contexte optionnel
+}
+
+/** Type pour un exercice de questions ouvertes */
+interface OpenQuestionExercise {
+  type: 'questionsOuvertes';
+  question: string; // Question ouverte en allemand
+  expectedAnswer: string; // Réponse attendue (pour référence)
+  difficulty: string; // Niveau de difficulté
+}
+
+/** Type pour un exercice de remise en ordre */
+interface ReorderExercise {
+  type: 'remiseEnOrdre';
+  words: string[]; // Mots dans le désordre
+  correctOrder: string[]; // Ordre correct
+  sentence: string; // Phrase complète correcte
+  grammaticalRule: string; // Règle grammaticale expliquée
+}
+
+/** Type pour un exercice de conjugaison */
+interface ConjugationExercise {
+  type: 'conjugaison';
+  verb: string; // Verbe à conjuguer
+  pronoun: string; // Pronom (ich, du, er, wir, ihr, sie, Sie)
+  tense: string; // Temps (Präsens, Präteritum, Perfekt, etc.)
+  correctForm: string; // Forme correcte
+  ruleExplanation: string; // Explication de la règle
+}
+
+/** Type pour un dialogue avec trous */
+interface DialogueCompletionExercise {
+  type: 'completionDialogue';
+  dialogue: Array<{
+    speaker: string; // A ou B
+    text: string; // Texte de la réplique (peut être vide pour les trous)
+    isBlank: boolean; // Si c'est un trou à remplir
+    expectedAnswer?: string; // Réponse attendue pour les trous
+  }>;
+  context: string; // Contexte du dialogue
+}
+
+/** Type pour un exercice d'association */
+interface AssociationExercise {
+  type: 'association';
+  leftColumn: string[]; // Mots/expressions en allemand
+  rightColumn: string[]; // Définitions/situations en français
+  correctPairs: [number, number][]; // Paires correctes (index gauche -> index droit)
+}
+
+/** Type pour un exercice de dictée */
+interface DictationExercise {
+  type: 'dictee';
+  sentence: string; // Phrase à dicter
+  words: string[]; // Mots individuels pour la correction
+}
+
+// ============================================================================
+// TYPES UNION
+// ============================================================================
+
 /** Type pour l'exercice généré (union) */
-type GeneratedExercise = GeneratedQCMExercise | GeneratedTextExercise;
+type GeneratedExercise = 
+  | GeneratedQCMExercise 
+  | GeneratedTextExercise
+  | TranslationExercise
+  | OpenQuestionExercise
+  | ReorderExercise
+  | ConjugationExercise
+  | DialogueCompletionExercise
+  | AssociationExercise
+  | DictationExercise;
 
 /** Type pour la réponse de Mistral (génération) */
 interface MistralExerciseResponse {
   questions?: QCMPQuestion[]; // Pour QCM (20 questions)
-  exercise?: GeneratedTextExercise; // Pour texte à trous
+  exercise?: GeneratedTextExercise | TranslationExercise | OpenQuestionExercise | ReorderExercise | ConjugationExercise | DialogueCompletionExercise | AssociationExercise | DictationExercise;
 }
 
 /** Type pour une réponse utilisateur à une question QCM */
@@ -53,9 +133,44 @@ interface UserQCMAnswer {
   [questionIndex: number]: number | null; // index du choix sélectionné
 }
 
+/** Type pour les réponses de traduction */
+interface TranslationAnswer {
+  translation: string;
+}
+
+/** Type pour les réponses de questions ouvertes */
+interface OpenQuestionAnswer {
+  answer: string;
+}
+
+/** Type pour les réponses de remise en ordre */
+interface ReorderAnswer {
+  orderedWords: string[];
+}
+
+/** Type pour les réponses de conjugaison */
+interface ConjugationAnswer {
+  conjugatedForm: string;
+}
+
+/** Type pour les réponses de dialogue */
+interface DialogueAnswer {
+  filledBlanks: string[]; // Réponses pour chaque trou
+}
+
+/** Type pour les réponses d'association */
+interface AssociationAnswer {
+  pairs: [number, number][]; // Paires choisies par l'utilisateur
+}
+
+/** Type pour les réponses de dictée */
+interface DictationAnswer {
+  transcribedText: string;
+}
+
 /** Type pour la correction complète */
 interface ExerciseCorrection {
-  totalScore: number; // Score global sur 100 (ou sur 20 pour QCM)
+  totalScore: number; // Score global sur 100
   totalQuestions: number;
   correctCount: number;
   corrections: Array<{
@@ -67,11 +182,78 @@ interface ExerciseCorrection {
   }>;
 }
 
+// ============================================================================
+// TYPES POUR LES CORRECTIONS SPÉCIFIQUES
+// ============================================================================
+
+/** Correction pour la traduction */
+interface TranslationCorrection {
+  score: number;
+  traductionCorrecte: string;
+  erreurs: string[];
+  conseils: string;
+}
+
+/** Correction pour les questions ouvertes */
+interface OpenQuestionCorrection {
+  score: number;
+  retour: string;
+  explicationComplete: string;
+}
+
+/** Correction pour la remise en ordre */
+interface ReorderCorrection {
+  score: number;
+  isCorrect: boolean;
+  correctSentence: string;
+  grammaticalExplanation: string;
+}
+
+/** Correction pour la conjugaison */
+interface ConjugationCorrection {
+  score: number;
+  isCorrect: boolean;
+  correctForm: string;
+  ruleExplanation: string;
+}
+
+/** Correction pour le dialogue */
+interface DialogueCorrection {
+  score: number;
+  corrections: Array<{
+    blankIndex: number;
+    isCorrect: boolean;
+    userAnswer: string;
+    correctAnswer: string;
+  }>;
+}
+
+/** Correction pour l'association */
+interface AssociationCorrection {
+  score: number;
+  correctPairs: [number, number][];
+  userPairs: [number, number][];
+}
+
+/** Correction pour la dictée */
+interface DictationCorrection {
+  score: number;
+  wordCorrections: Array<{
+    word: string;
+    isCorrect: boolean;
+    expected: string;
+    actual: string;
+  }>;
+}
+
 /** Type de source pour le thème */
 type ThemeSource = 'cours' | 'libre';
 
 /** Étapes du flux */
 type ExerciseStep = 'select' | 'generating' | 'answering' | 'correcting' | 'saved';
+
+/** Direction de traduction */
+type TranslationDirection = 'fr-de' | 'de-fr';
 
 // ============================================================================
 // COMPOSANT PRINCIPAL
@@ -98,6 +280,35 @@ export default function ExercicesPage() {
   const [qcmAnswers, setQcmAnswers] = useState<UserQCMAnswer>({});
   // Pour texte à trous : réponse unique
   const [textAnswer, setTextAnswer] = useState<string>('');
+  // Pour traduction
+  const [translationDirection, setTranslationDirection] = useState<TranslationDirection>('fr-de');
+  const [translationAnswer, setTranslationAnswer] = useState<string>('');
+  const [translationCorrection, setTranslationCorrection] = useState<TranslationCorrection | null>(null);
+  
+  // Pour questions ouvertes
+  const [openQuestionAnswer, setOpenQuestionAnswer] = useState<string>('');
+  const [openQuestionCorrection, setOpenQuestionCorrection] = useState<OpenQuestionCorrection | null>(null);
+  
+  // Pour remise en ordre
+  const [reorderSelected, setReorderSelected] = useState<string[]>([]);
+  const [reorderCorrection, setReorderCorrection] = useState<ReorderCorrection | null>(null);
+  
+  // Pour conjugaison
+  const [conjugationAnswer, setConjugationAnswer] = useState<string>('');
+  const [conjugationCorrection, setConjugationCorrection] = useState<ConjugationCorrection | null>(null);
+  
+  // Pour dialogue
+  const [dialogueAnswers, setDialogueAnswers] = useState<string[]>([]);
+  const [dialogueCorrection, setDialogueCorrection] = useState<DialogueCorrection | null>(null);
+  
+  // Pour association
+  const [associationPairs, setAssociationPairs] = useState<[number, number][]>([]);
+  const [associationCorrection, setAssociationCorrection] = useState<AssociationCorrection | null>(null);
+  
+  // Pour dictée
+  const [dictationAnswer, setDictationAnswer] = useState<string>('');
+  const [dictationCorrection, setDictationCorrection] = useState<DictationCorrection | null>(null);
+  const [isPlayingDictation, setIsPlayingDictation] = useState(false);
   
   const [correction, setCorrection] = useState<ExerciseCorrection | null>(null);
   
@@ -223,11 +434,168 @@ Réponds avec un JSON contenant :
   }
 }`;
     }
+
+    if (type === 'traduction') {
+      return `${basePrompt}
+Crée un exercice de traduction basé sur le contenu ci-dessus.
+- Génère UNE SEULE phrase à traduire (15-20 mots max)
+- Direction : ${translationDirection === 'fr-de' ? 'Français → Allemand' : 'Allemand → Français'}
+- La phrase doit utiliser du vocabulaire pertinent du contenu
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "traduction",
+    "sentence": "[phrase à traduire]",
+    "direction": "${translationDirection}",
+    "correctTranslation": "[traduction correcte]",
+    "context": "[contexte optionnel en français]"
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'questionsOuvertes') {
+      return `${basePrompt}
+Crée UNE SEULE question ouverte basée sur le contenu ci-dessus.
+- La question doit être en allemand
+- Elle doit porter sur un point grammatical, lexical ou culturel important
+- Niveau adapté : ${niveauCECRL}
+
+Exemples de questions :
+- "Was ist der Unterschied zwischen 'haben' und 'sein' im Perfekt?"
+- "Wie bildet man den Konjunktiv II von 'gehen'?"
+- "Welche Präposition verwendet man mit 'interessiert'?"
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "questionsOuvertes",
+    "question": "[question en allemand]",
+    "expectedAnswer": "[réponse attendue en allemand]",
+    "difficulty": "${niveauCECRL}"
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'remiseEnOrdre') {
+      return `${basePrompt}
+Crée un exercice de remise en ordre (Satzstellung) basé sur le contenu ci-dessus.
+- Génère UNE phrase allemande de 5-8 mots
+- Mélange les mots dans un ordre aléatoire
+- La phrase doit illustrer une règle grammaticale importante
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "remiseEnOrdre",
+    "words": ["[mot1]", "[mot2]", "[mot3]", ...],
+    "correctOrder": ["[mot1]", "[mot2]", "[mot3]", ...],
+    "sentence": "[phrase complète correcte]",
+    "grammaticalRule": "[explication de la règle grammaticale en français]"
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'conjugaison') {
+      return `${basePrompt}
+Crée un exercice de conjugaison basé sur le contenu ci-dessus.
+- Choisis un verbe courant en allemand
+- Sélectionne un pronom (ich, du, er, sie, es, wir, ihr, sie, Sie)
+- Choisis un temps (Präsens, Präteritum, Perfekt, Futur I, etc.)
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "conjugaison",
+    "verb": "[verbe à l'infinitif]",
+    "pronoun": "[pronom]",
+    "tense": "[temps en allemand]",
+    "correctForm": "[forme conjuguée correcte]",
+    "ruleExplanation": "[explication de la règle en français]"
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'completionDialogue') {
+      return `${basePrompt}
+Crée un exercice de complétion de dialogue basé sur le contenu ci-dessus.
+- Génère un mini-dialogue de 3-5 répliques
+- 1-2 répliques doivent être des trous à remplir
+- Le dialogue doit être naturel et contextuel
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "completionDialogue",
+    "dialogue": [
+      {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
+      {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"},
+      {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
+      {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"}
+    ],
+    "context": "[contexte du dialogue en français]"
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'association') {
+      return `${basePrompt}
+Crée un exercice d'association (Zuordnung) basé sur le contenu ci-dessus.
+- Génère 4-6 mots/expressions en allemand
+- Génère 4-6 définitions/situations en français
+- Chaque mot doit correspondre à une définition
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "association",
+    "leftColumn": ["[mot1]", "[mot2]", "[mot3]", "[mot4]"],
+    "rightColumn": ["[définition1]", "[définition2]", "[définition3]", "[définition4]"],
+    "correctPairs": [[0, 0], [1, 1], [2, 2], [3, 3]]
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Les paires correctes doivent être des tableaux [index_gauche, index_droit].`;
+    }
+
+    if (type === 'dictee') {
+      return `${basePrompt}
+Crée un exercice de dictée (Diktat) basé sur le contenu ci-dessus.
+- Génère UNE phrase courte en allemand (8-12 mots max)
+- La phrase doit utiliser du vocabulaire du contenu
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercise": {
+    "type": "dictee",
+    "sentence": "[phrase à dicter]",
+    "words": ["[mot1]", "[mot2]", ...]
+  }
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
     
     // Pour les autres types
     return `${basePrompt}
 Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
-  }, [getCurrentContext, niveauCECRL]);
+  }, [getCurrentContext, niveauCECRL, translationDirection]);
 
   /**
    * Génère un exercice via l'API Mistral
@@ -291,20 +659,124 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
           questions: validQuestions,
         };
       } else {
-        // Texte à trous ou autre
+        // Texte à trous ou autres types
         if (!data.exercise) {
           throw new Error('Réponse Mistral invalide : exercice manquant');
         }
-        
-        exercise = {
-          type: selectedType,
-          question: data.exercise.question,
-          textWithBlanks: data.exercise.textWithBlanks,
-          correctAnswer: Array.isArray(data.exercise.correctAnswer) 
-            ? data.exercise.correctAnswer.map(String) 
-            : [String(data.exercise.correctAnswer)],
-          explanation: data.exercise.explanation || '',
-        };
+
+        const exerciseData = data.exercise;
+
+        switch (selectedType) {
+          case 'texteATrous':
+            exercise = {
+              type: 'texteATrous',
+              question: String(exerciseData.question || ''),
+              textWithBlanks: String(exerciseData.textWithBlanks || ''),
+              correctAnswer: Array.isArray(exerciseData.correctAnswer) 
+                ? exerciseData.correctAnswer.map(String) 
+                : [String(exerciseData.correctAnswer || '')],
+              explanation: String(exerciseData.explanation || ''),
+            };
+            break;
+
+          case 'traduction':
+            exercise = {
+              type: 'traduction',
+              sentence: String(exerciseData.sentence || ''),
+              direction: String(exerciseData.direction || 'fr-de'),
+              correctTranslation: String(exerciseData.correctTranslation || ''),
+              context: String(exerciseData.context || ''),
+            };
+            break;
+
+          case 'questionsOuvertes':
+            exercise = {
+              type: 'questionsOuvertes',
+              question: String(exerciseData.question || ''),
+              expectedAnswer: String(exerciseData.expectedAnswer || ''),
+              difficulty: String(exerciseData.difficulty || niveauCECRL),
+            };
+            break;
+
+          case 'remiseEnOrdre':
+            exercise = {
+              type: 'remiseEnOrdre',
+              words: Array.isArray(exerciseData.words) 
+                ? exerciseData.words.map(String) 
+                : [String(exerciseData.words || '')],
+              correctOrder: Array.isArray(exerciseData.correctOrder) 
+                ? exerciseData.correctOrder.map(String) 
+                : [],
+              sentence: String(exerciseData.sentence || ''),
+              grammaticalRule: String(exerciseData.grammaticalRule || ''),
+            };
+            break;
+
+          case 'conjugaison':
+            exercise = {
+              type: 'conjugaison',
+              verb: String(exerciseData.verb || ''),
+              pronoun: String(exerciseData.pronoun || ''),
+              tense: String(exerciseData.tense || ''),
+              correctForm: String(exerciseData.correctForm || ''),
+              ruleExplanation: String(exerciseData.ruleExplanation || ''),
+            };
+            break;
+
+          case 'completionDialogue':
+            exercise = {
+              type: 'completionDialogue',
+              dialogue: Array.isArray(exerciseData.dialogue) 
+                ? exerciseData.dialogue.map((d: any) => ({
+                    speaker: String(d.speaker || ''),
+                    text: String(d.text || ''),
+                    isBlank: Boolean(d.isBlank || false),
+                    expectedAnswer: String(d.expectedAnswer || ''),
+                  }))
+                : [],
+              context: String(exerciseData.context || ''),
+            };
+            break;
+
+          case 'association':
+            exercise = {
+              type: 'association',
+              leftColumn: Array.isArray(exerciseData.leftColumn) 
+                ? exerciseData.leftColumn.map(String) 
+                : [],
+              rightColumn: Array.isArray(exerciseData.rightColumn) 
+                ? exerciseData.rightColumn.map(String) 
+                : [],
+              correctPairs: Array.isArray(exerciseData.correctPairs) 
+                ? exerciseData.correctPairs.map((p: any) => [Number(p[0]), Number(p[1])])
+                : [],
+            };
+            break;
+
+          case 'dictee':
+            exercise = {
+              type: 'dictee',
+              sentence: String(exerciseData.sentence || ''),
+              words: Array.isArray(exerciseData.words) 
+                ? exerciseData.words.map(String) 
+                : [String(exerciseData.words || '')],
+            };
+            break;
+
+          case 'production':
+            // Production écrite (déjà existante)
+            exercise = {
+              type: 'production',
+              question: String(exerciseData.question || ''),
+              textWithBlanks: '',
+              correctAnswer: [],
+              explanation: String(exerciseData.explanation || ''),
+            } as any;
+            break;
+
+          default:
+            throw new Error(`Type d'exercice non implémenté : ${selectedType}`);
+        }
       }
 
       setGeneratedExercise(exercise);
@@ -404,6 +876,375 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
   }, [generatedExercise, textAnswer]);
 
   /**
+   * Corrige la traduction via Mistral
+   */
+  const correctTranslationExercise = useCallback(async () => {
+    if (!generatedExercise || generatedExercise.type !== 'traduction') return null;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette traduction.
+
+---
+Phrase à traduire: ${generatedExercise.sentence}
+Direction: ${generatedExercise.direction}
+Traduction de l'élève: ${translationAnswer}
+Traduction correcte: ${generatedExercise.correctTranslation}
+Niveau: ${niveauCECRL}
+---
+
+Évalue la traduction avec :
+- Un score sur 100
+- Les erreurs spécifiques
+- Des conseils pour améliorer
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "traductionCorrecte": "[traduction correcte]",
+  "erreurs": ["erreur1", "erreur2", ...],
+  "conseils": "[conseils en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      return {
+        score: Number(data.score),
+        traductionCorrecte: String(data.traductionCorrecte || generatedExercise.correctTranslation),
+        erreurs: Array.isArray(data.erreurs) ? data.erreurs.map(String) : [],
+        conseils: String(data.conseils || ''),
+      };
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger la traduction : ${errorMessage}`);
+      setIsLoading(false);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [generatedExercise, translationAnswer, niveauCECRL]);
+
+  /**
+   * Corrige les questions ouvertes via Mistral
+   */
+  const correctOpenQuestionExercise = useCallback(async () => {
+    if (!generatedExercise || generatedExercise.type !== 'questionsOuvertes') return null;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette réponse à une question ouverte.
+
+---
+Question: ${generatedExercise.question}
+Réponse de l'élève: ${openQuestionAnswer}
+Réponse attendue: ${generatedExercise.expectedAnswer}
+Niveau: ${niveauCECRL}
+---
+
+Évalue la réponse avec :
+- Un score sur 100
+- Un retour détaillé sur la qualité de la réponse
+- Une explication complète
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "retour": "[retour détaillé en français]",
+  "explicationComplete": "[explication complète en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      return {
+        score: Number(data.score),
+        retour: String(data.retour || ''),
+        explicationComplete: String(data.explicationComplete || ''),
+      };
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger la question ouverte : ${errorMessage}`);
+      setIsLoading(false);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [generatedExercise, openQuestionAnswer, niveauCECRL]);
+
+  /**
+   * Corrige la remise en ordre (correction automatique)
+   */
+  const correctReorderExercise = useCallback(() => {
+    if (!generatedExercise || generatedExercise.type !== 'remiseEnOrdre') return null;
+
+    const isCorrect = reorderSelected.join(',') === generatedExercise.correctOrder.join(',');
+    const score = isCorrect ? 100 : 0;
+
+    return {
+      score,
+      isCorrect,
+      correctSentence: generatedExercise.sentence,
+      grammaticalExplanation: generatedExercise.grammaticalRule,
+    };
+  }, [generatedExercise, reorderSelected]);
+
+  /**
+   * Corrige la conjugaison (correction automatique)
+   */
+  const correctConjugationExercise = useCallback(() => {
+    if (!generatedExercise || generatedExercise.type !== 'conjugaison') return null;
+
+    const isCorrect = conjugationAnswer.trim().toLowerCase() === generatedExercise.correctForm.toLowerCase();
+    const score = isCorrect ? 100 : 0;
+
+    return {
+      score,
+      isCorrect,
+      correctForm: generatedExercise.correctForm,
+      ruleExplanation: generatedExercise.ruleExplanation,
+    };
+  }, [generatedExercise, conjugationAnswer]);
+
+  /**
+   * Corrige le dialogue via Mistral
+   */
+  const correctDialogueExercise = useCallback(async () => {
+    if (!generatedExercise || generatedExercise.type !== 'completionDialogue') return null;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige ce dialogue complété par l'élève.
+
+---
+Dialogue:
+${generatedExercise.dialogue.map((d: any, i: number) => 
+  `${d.speaker}: ${d.isBlank ? `[${dialogueAnswers[i] || '...'}]` : d.text}`
+).join('\n')}
+
+Réponses attendues:
+${generatedExercise.dialogue.map((d: any, i: number) => 
+  d.isBlank ? `${d.speaker}: ${d.expectedAnswer}` : ''
+).filter(Boolean).join('\n')}
+Niveau: ${niveauCECRL}
+---
+
+Évalue chaque trou avec :
+- Un score global sur 100
+- Pour chaque trou : si correct, la réponse de l'élève, la réponse attendue
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "corrections": [
+    {"blankIndex": 0, "isCorrect": true/false, "userAnswer": "[réponse élève]", "correctAnswer": "[réponse attendue]"},
+    ...
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      return {
+        score: Number(data.score),
+        corrections: Array.isArray(data.corrections) 
+          ? data.corrections.map((c: any) => ({
+              blankIndex: Number(c.blankIndex),
+              isCorrect: Boolean(c.isCorrect),
+              userAnswer: String(c.userAnswer || ''),
+              correctAnswer: String(c.correctAnswer || ''),
+            }))
+          : [],
+      };
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger le dialogue : ${errorMessage}`);
+      setIsLoading(false);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [generatedExercise, dialogueAnswers, niveauCECRL]);
+
+  /**
+   * Corrige l'association (correction automatique)
+   */
+  const correctAssociationExercise = useCallback(() => {
+    if (!generatedExercise || generatedExercise.type !== 'association') return null;
+
+    let correctCount = 0;
+    const totalPairs = Math.min(generatedExercise.leftColumn.length, generatedExercise.rightColumn.length);
+
+    // Compter les paires correctes
+    associationPairs.forEach(([leftIndex, rightIndex]) => {
+      const isCorrect = generatedExercise.correctPairs.some(
+        ([correctLeft, correctRight]) => correctLeft === leftIndex && correctRight === rightIndex
+      );
+      if (isCorrect) {
+        correctCount++;
+      }
+    });
+
+    const score = Math.round((correctCount / Math.max(totalPairs, 1)) * 100);
+
+    return {
+      score,
+      correctPairs: generatedExercise.correctPairs,
+      userPairs: associationPairs,
+    };
+  }, [generatedExercise, associationPairs]);
+
+  /**
+   * Corrige la dictée via Mistral
+   */
+  const correctDictationExercise = useCallback(async () => {
+    if (!generatedExercise || generatedExercise.type !== 'dictee') return null;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette dictée.
+
+---
+Phrase à dicter: ${generatedExercise.sentence}
+Texte de l'élève: ${dictationAnswer}
+Mots attendus: ${generatedExercise.words.join(', ')}
+Niveau: ${niveauCECRL}
+---
+
+Corrige mot par mot et donne :
+- Un score global sur 100
+- Pour chaque mot : si correct, le mot attendu, le mot écrit par l'élève
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "wordCorrections": [
+    {"word": "[mot attendu]", "isCorrect": true/false, "expected": "[mot attendu]", "actual": "[mot écrit par l'élève]"},
+    ...
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      return {
+        score: Number(data.score),
+        wordCorrections: Array.isArray(data.wordCorrections) 
+          ? data.wordCorrections.map((wc: any) => ({
+              word: String(wc.word || ''),
+              isCorrect: Boolean(wc.isCorrect),
+              expected: String(wc.expected || ''),
+              actual: String(wc.actual || ''),
+            }))
+          : [],
+      };
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger la dictée : ${errorMessage}`);
+      setIsLoading(false);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [generatedExercise, dictationAnswer, niveauCECRL]);
+
+  /**
    * Corrige l'exercice (appel à Mistral pour la correction détaillée)
    * Pour QCM, on fait la correction locale car c'est déterministe
    */
@@ -417,13 +1258,153 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
     try {
       let correctionResult: ExerciseCorrection | null = null;
 
-      if (generatedExercise.type === 'qcm') {
-        // Correction locale pour QCM (déterministe)
-        correctionResult = correctQCMExercise();
-      } else {
-        // Pour texte à trous, on pourrait aussi faire de la correction locale
-        // Mais on garde l'appel à Mistral pour une explication pédagogique
-        correctionResult = correctTextExercise();
+      switch (generatedExercise.type) {
+        case 'qcm':
+          correctionResult = correctQCMExercise();
+          break;
+        case 'texteATrous':
+          correctionResult = correctTextExercise();
+          break;
+        case 'traduction':
+          const translationCorrection = await correctTranslationExercise();
+          if (translationCorrection) {
+            setTranslationCorrection(translationCorrection);
+            // Convertir en ExerciseCorrection pour la compatibilité
+            correctionResult = {
+              totalScore: translationCorrection.score,
+              totalQuestions: 1,
+              correctCount: translationCorrection.score >= 50 ? 1 : 0,
+              corrections: [{
+                questionIndex: 0,
+                isCorrect: translationCorrection.score >= 50,
+                userAnswer: translationAnswer,
+                correctAnswer: translationCorrection.traductionCorrecte,
+                explanation: `${translationCorrection.erreurs.join('; ')}. ${translationCorrection.conseils}`,
+              }],
+            };
+          }
+          break;
+        case 'questionsOuvertes':
+          const openCorrection = await correctOpenQuestionExercise();
+          if (openCorrection) {
+            setOpenQuestionCorrection(openCorrection);
+            correctionResult = {
+              totalScore: openCorrection.score,
+              totalQuestions: 1,
+              correctCount: openCorrection.score >= 50 ? 1 : 0,
+              corrections: [{
+                questionIndex: 0,
+                isCorrect: openCorrection.score >= 50,
+                userAnswer: openQuestionAnswer,
+                correctAnswer: generatedExercise.expectedAnswer,
+                explanation: openCorrection.explicationComplete,
+              }],
+            };
+          }
+          break;
+        case 'remiseEnOrdre':
+          const reorderCorrection = correctReorderExercise();
+          if (reorderCorrection) {
+            setReorderCorrection(reorderCorrection);
+            correctionResult = {
+              totalScore: reorderCorrection.score,
+              totalQuestions: 1,
+              correctCount: reorderCorrection.isCorrect ? 1 : 0,
+              corrections: [{
+                questionIndex: 0,
+                isCorrect: reorderCorrection.isCorrect,
+                userAnswer: reorderSelected.join(' '),
+                correctAnswer: generatedExercise.sentence,
+                explanation: reorderCorrection.grammaticalExplanation,
+              }],
+            };
+          }
+          break;
+        case 'conjugaison':
+          const conjugationCorrection = correctConjugationExercise();
+          if (conjugationCorrection) {
+            setConjugationCorrection(conjugationCorrection);
+            correctionResult = {
+              totalScore: conjugationCorrection.score,
+              totalQuestions: 1,
+              correctCount: conjugationCorrection.isCorrect ? 1 : 0,
+              corrections: [{
+                questionIndex: 0,
+                isCorrect: conjugationCorrection.isCorrect,
+                userAnswer: conjugationAnswer,
+                correctAnswer: conjugationCorrection.correctForm,
+                explanation: conjugationCorrection.ruleExplanation,
+              }],
+            };
+          }
+          break;
+        case 'completionDialogue':
+          const dialogueCorrection = await correctDialogueExercise();
+          if (dialogueCorrection) {
+            setDialogueCorrection(dialogueCorrection);
+            correctionResult = {
+              totalScore: dialogueCorrection.score,
+              totalQuestions: dialogueCorrection.corrections.length,
+              correctCount: dialogueCorrection.corrections.filter(c => c.isCorrect).length,
+              corrections: dialogueCorrection.corrections.map((c, i) => ({
+                questionIndex: i,
+                isCorrect: c.isCorrect,
+                userAnswer: c.userAnswer,
+                correctAnswer: c.correctAnswer,
+                explanation: '',
+              })),
+            };
+          }
+          break;
+        case 'association':
+          const associationCorrection = correctAssociationExercise();
+          if (associationCorrection) {
+            setAssociationCorrection(associationCorrection);
+            correctionResult = {
+              totalScore: associationCorrection.score,
+              totalQuestions: associationCorrection.correctPairs.length,
+              correctCount: associationCorrection.correctPairs.filter((_, i) => 
+                associationCorrection.userPairs.some(u => 
+                  u[0] === associationCorrection.correctPairs[i][0] && 
+                  u[1] === associationCorrection.correctPairs[i][1]
+                )
+              ).length,
+              corrections: associationCorrection.correctPairs.map((_, i) => ({
+                questionIndex: i,
+                isCorrect: associationCorrection.userPairs.some(u => 
+                  u[0] === associationCorrection.correctPairs[i][0] && 
+                  u[1] === associationCorrection.correctPairs[i][1]
+                ),
+                userAnswer: '',
+                correctAnswer: '',
+                explanation: '',
+              })),
+            };
+          }
+          break;
+        case 'dictee':
+          const dictationCorrection = await correctDictationExercise();
+          if (dictationCorrection) {
+            setDictationCorrection(dictationCorrection);
+            correctionResult = {
+              totalScore: dictationCorrection.score,
+              totalQuestions: dictationCorrection.wordCorrections.length,
+              correctCount: dictationCorrection.wordCorrections.filter(w => w.isCorrect).length,
+              corrections: dictationCorrection.wordCorrections.map((wc, i) => ({
+                questionIndex: i,
+                isCorrect: wc.isCorrect,
+                userAnswer: wc.actual,
+                correctAnswer: wc.expected,
+                explanation: '',
+              })),
+            };
+          }
+          break;
+        case 'production':
+        default:
+          // Correction par défaut
+          correctionResult = correctTextExercise();
+          break;
       }
 
       if (!correctionResult) {
@@ -440,7 +1421,25 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       setStep('answering');
       setIsLoading(false);
     }
-  }, [generatedExercise, correctQCMExercise, correctTextExercise]);
+  }, [
+    generatedExercise, 
+    correctQCMExercise, 
+    correctTextExercise,
+    correctTranslationExercise,
+    correctOpenQuestionExercise,
+    correctReorderExercise,
+    correctConjugationExercise,
+    correctDialogueExercise,
+    correctAssociationExercise,
+    correctDictationExercise,
+    translationAnswer,
+    openQuestionAnswer,
+    reorderSelected,
+    conjugationAnswer,
+    dialogueAnswers,
+    associationPairs,
+    dictationAnswer
+  ]);
 
   // ==========================================================================
   // SAUVEGARDE
@@ -656,11 +1655,50 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
               >
                 <option value="qcm">QCM (20 questions)</option>
                 <option value="texteATrous">Texte à trous</option>
+                <option value="traduction">Traduction</option>
+                <option value="questionsOuvertes">Questions ouvertes</option>
+                <option value="remiseEnOrdre">Remise en ordre</option>
+                <option value="conjugaison">Conjugaison</option>
+                <option value="completionDialogue">Complétion de dialogue</option>
+                <option value="association">Association</option>
+                <option value="dictee">Dictée</option>
+                <option value="production">Production écrite</option>
               </select>
               {selectedType === 'qcm' && (
                 <p className="text-xs text-gray-500 mt-1">
                   20 questions à choix multiples générées automatiquement
                 </p>
+              )}
+              {selectedType === 'texteATrous' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Complétez les trous dans un texte
+                </p>
+              )}
+              {selectedType === 'traduction' && (
+                <div className="mt-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input
+                      type="radio"
+                      name="translationDirection"
+                      value="fr-de"
+                      checked={translationDirection === 'fr-de'}
+                      onChange={(e) => setTranslationDirection(e.target.value as TranslationDirection)}
+                      className="h-3 w-3 text-blue-600"
+                    />
+                    <span>Français → Allemand</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input
+                      type="radio"
+                      name="translationDirection"
+                      value="de-fr"
+                      checked={translationDirection === 'de-fr'}
+                      onChange={(e) => setTranslationDirection(e.target.value as TranslationDirection)}
+                      className="h-3 w-3 text-blue-600"
+                    />
+                    <span>Allemand → Français</span>
+                  </label>
+                </div>
               )}
             </div>
 

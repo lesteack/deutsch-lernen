@@ -40,7 +40,7 @@ export interface Manuel {
 }
 
 /** Type pour les exercices */
-export type ExerciceType = 'qcm' | 'texteATrous' | 'traduction' | 'production';
+export type ExerciceType = 'qcm' | 'texteATrous' | 'traduction' | 'production' | 'questionsOuvertes' | 'remiseEnOrdre' | 'conjugaison' | 'completionDialogue' | 'association' | 'dictee';
 
 export interface Exercice {
   id: string;
