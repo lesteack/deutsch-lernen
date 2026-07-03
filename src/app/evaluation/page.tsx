@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import {
   getAllLecons,
   getProgression,
   addEvaluation,
+  getEvaluations,
   type Lecon,
   type TexteSupport,
   type TexteSupportType,
@@ -12,6 +14,7 @@ import {
   type CritereEvaluation,
   type NiveauCECRL,
 } from '@/lib/storage';
+import { mettreAJourProgression } from '@/lib/progression';
 import { predefinedThemes } from '@/lib/themes';
 
 // ============================================================================
@@ -39,6 +42,38 @@ interface ProductionQuestion {
 
 /** Type union pour les questions de compréhension */
 type ComprehensionQuestion = QCMQuestion | ProductionQuestion;
+
+/** Type pour une question de test global (QCM) */
+interface GlobalTestQCMQuestion {
+  type: 'qcm';
+  critere: 'comprehensionEcrite' | 'comprehensionOrale' | 'expressionEcrite' | 'expressionOrale';
+  question: string;
+  choix: string[];
+  bonneReponse: number;
+  explication: string;
+}
+
+/** Type pour une question de test global (production écrite) */
+interface GlobalTestProductionQuestion {
+  type: 'production';
+  critere: 'expressionEcrite';
+  consigne: string;
+  correctionCriteres: string[];
+}
+
+/** Type pour une question de test global (oral) */
+interface GlobalTestOralQuestion {
+  type: 'oral';
+  critere: 'expressionOrale';
+  consigne: string;
+  correctionCriteres: string[];
+}
+
+/** Type union pour les questions du test global */
+type GlobalTestQuestion = GlobalTestQCMQuestion | GlobalTestProductionQuestion | GlobalTestOralQuestion;
+
+/** État du test global */
+type GlobalTestState = 'start' | 'generating' | 'inProgress' | 'correcting' | 'results';
 
 /** Type pour le texte généré par Mistral */
 interface GeneratedText {
@@ -187,6 +222,24 @@ export default function EvaluationPage() {
   // État pour la correction des réponses de production (CO/CE)
   const [productionCorrection, setProductionCorrection] = useState<ProductionAnswerCorrection | null>(null);
   
+  // État pour le test global
+  const [globalTestState, setGlobalTestState] = useState<GlobalTestState>('start');
+  const [globalTestQuestions, setGlobalTestQuestions] = useState<GlobalTestQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [globalTestAnswers, setGlobalTestAnswers] = useState<Record<number, any>>({});
+  const [globalTestScores, setGlobalTestScores] = useState<Record<string, number>>({});
+  const [globalTestCorrections, setGlobalTestCorrections] = useState<Record<number, any>>({});
+  const [globalTestResults, setGlobalTestResults] = useState<{
+    scoreGlobal: number;
+    scoresParCritere: Record<string, number>;
+    nouveauNiveau: string;
+    justification: string;
+    pointsForts: string[];
+    axesAmelioration: string[];
+  } | null>(null);
+  const [oralTranscript, setOralTranscript] = useState<string>('');
+  const [isRecordingGlobal, setIsRecordingGlobal] = useState(false);
+  
   // État UI
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,10 +249,14 @@ export default function EvaluationPage() {
   // CHARGEMENT INITIAL
   // ==========================================================================
 
-  // Charger les leçons et la progression au montage
+  // État pour les évaluations existantes
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+
+  // Charger les leçons, la progression et les évaluations au montage
   useEffect(() => {
     const lecons = getAllLecons();
     const progression = getProgression();
+    const evals = getEvaluations();
     
     if (lecons.length > 0) {
       // Sélectionner une leçon aléatoire pour le mode 'cours'
@@ -208,6 +265,7 @@ export default function EvaluationPage() {
     }
     
     setNiveauCECRL(progression.niveauEstimeCECRL);
+    setEvaluations(evals);
   }, []);
 
   // Réinitialiser lors du changement d'onglet
@@ -1152,6 +1210,614 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       setError(`Impossible de sauvegarder l'évaluation`);
     }
   }, [getCurrentContext]);
+
+  // ==========================================================================
+  // FONCTIONS POUR LE TEST GLOBAL
+  // ==========================================================================
+
+  /**
+   * Génère les questions du test global à partir de toutes les leçons
+   */
+  const generateGlobalTestQuestions = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setGlobalTestState('generating');
+
+    try {
+      const lecons = getAllLecons();
+      const progression = getProgression();
+      
+      if (lecons.length === 0) {
+        throw new Error('Aucune leçon disponible. Importez d\'abord un PDF via /lecons/import');
+      }
+
+      // Préparer le contexte : titres + notionsCles de toutes les leçons
+      const leconsContext = lecons.map(l => ({
+        titre: l.titre,
+        notionsCles: l.notionsCles,
+        type: l.type,
+      }));
+
+      // Calculer les poids : plus de poids aux leçons anciennes et non testées
+      const poidsParLecon = lecons.map((lecon, index) => {
+        let poids = 1;
+        
+        // Plus de poids aux leçons anciennes
+        const ageEnJours = Math.floor(
+          (new Date().getTime() - new Date(lecon.dateAjout).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        poids += Math.min(ageEnJours / 7, 2); // +2 max pour les très anciennes
+        
+        // Plus de poids aux leçons jamais testées
+        const estTestee = evaluations.some(e => 
+          e.sequenceCible?.includes(lecon.titre) || 
+          e.sequenceCible?.includes(lecon.id)
+        );
+        if (!estTestee) {
+          poids += 3; // Bonus important pour les non-testées
+        }
+        
+        return Math.round(poids * 100) / 100;
+      });
+
+      const prompt = `Tu es un professeur d'allemand. Crée un test global complet pour évaluer toutes les compétences d'un élève.
+
+---
+Contexte: L'élève a étudié les leçons suivantes :
+${leconsContext.map(l => `- ${l.titre} (mots-clés: ${l.notionsCles.slice(0, 5).join(', ')})`).join('\n')}
+
+Niveau actuel estimé: ${progression.niveauEstimeCECRL || 'A1'}
+Poids par leçon: ${poidsParLecon.map((p, i) => `${lecons[i].titre}: ${p}`).join(', ')}
+
+---
+
+Crée EXACTEMENT 10 questions variées avec la répartition suivante :
+- 5 questions QCM
+- 3 questions de production écrite
+- 2 questions d'expression orale
+
+Les questions doivent couvrir tous les critères CECRL :
+- comprehensionEcrite (compréhension écrite)
+- comprehensionOrale (compréhension orale)
+- expressionEcrite (expression écrite)
+- expressionOrale (expression orale)
+
+Pour les QCM :
+- type: "qcm"
+- critere: un des 4 critères ci-dessus
+- question: question en allemand
+- choix: 4 réponses (1 correcte, 3 incorrectes)
+- bonneReponse: index (0-3)
+- explication: explication en français
+
+Pour les productions écrites :
+- type: "production"
+- critere: "expressionEcrite"
+- consigne: consigne en allemand (ex: "Schreiben Sie 3-4 Sätze über...")
+- correctionCriteres: ["grammaire", "vocabulaire", "structure"]
+
+Pour les oraux :
+- type: "oral"
+- critere: "expressionOrale"
+- consigne: consigne en allemand (ex: "Sprechen Sie 1 Minute über...")
+- correctionCriteres: ["prononciation", "vocabulaire", "fluidite"]
+
+Donne plus de poids aux leçons anciennes et non testées dans tes questions.
+
+Réponds avec UN SEUL objet JSON :
+{
+  "questions": [
+    {
+      "type": "qcm",
+      "critere": "comprehensionEcrite",
+      "question": "...",
+      "choix": ["A", "B", "C", "D"],
+      "bonneReponse": 0,
+      "explication": "..."
+    },
+    ... (9 autres questions)
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 10 questions.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la génération du test global');
+      }
+
+      const data = await response.json();
+      
+      // Valider la réponse
+      if (!data.questions || !Array.isArray(data.questions) || data.questions.length !== 10) {
+        throw new Error(`Réponse Mistral invalide : attendu 10 questions, reçu ${data.questions?.length || 0}`);
+      }
+
+      // Valider et parser les questions
+      const validQuestions: GlobalTestQuestion[] = data.questions.map((q: any, index: number) => {
+        if (q.type === 'qcm') {
+          if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
+              q.bonneReponse === undefined || !q.critere) {
+            throw new Error(`Question QCM ${index + 1} invalide`);
+          }
+          return {
+            type: 'qcm',
+            critere: q.critere,
+            question: String(q.question),
+            choix: q.choix.map((c: any) => String(c)),
+            bonneReponse: Number(q.bonneReponse),
+            explication: String(q.explication || ''),
+          };
+        } else if (q.type === 'production') {
+          if (!q.consigne || !q.critere) {
+            throw new Error(`Question production ${index + 1} invalide`);
+          }
+          return {
+            type: 'production',
+            critere: q.critere,
+            consigne: String(q.consigne),
+            correctionCriteres: Array.isArray(q.correctionCriteres) 
+              ? q.correctionCriteres.map(String) 
+              : ['grammaire', 'vocabulaire'],
+          };
+        } else if (q.type === 'oral') {
+          if (!q.consigne || !q.critere) {
+            throw new Error(`Question orale ${index + 1} invalide`);
+          }
+          return {
+            type: 'oral',
+            critere: q.critere,
+            consigne: String(q.consigne),
+            correctionCriteres: Array.isArray(q.correctionCriteres) 
+              ? q.correctionCriteres.map(String) 
+              : ['prononciation', 'vocabulaire', 'fluidite'],
+          };
+        } else {
+          throw new Error(`Type de question invalide: ${q.type}`);
+        }
+      });
+
+      setGlobalTestQuestions(validQuestions);
+      setGlobalTestState('inProgress');
+      setCurrentQuestionIndex(0);
+      setGlobalTestAnswers({});
+      setGlobalTestScores({});
+      setGlobalTestCorrections({});
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de générer le test global : ${errorMessage}`);
+      setGlobalTestState('start');
+      setIsLoading(false);
+    }
+  }, [evaluations]);
+
+  /**
+   * Corrige une réponse QCM du test global
+   */
+  const correctGlobalTestQCM = useCallback(async (questionIndex: number, answerIndex: number) => {
+    const question = globalTestQuestions[questionIndex];
+    if (question.type !== 'qcm') return;
+
+    const isCorrect = answerIndex === question.bonneReponse;
+    const score = isCorrect ? 100 : 0;
+
+    // Stocker la réponse et le score
+    setGlobalTestAnswers(prev => ({
+      ...prev,
+      [questionIndex]: answerIndex,
+    }));
+
+    setGlobalTestScores(prev => ({
+      ...prev,
+      [question.critere]: prev[question.critere] ? 
+        Math.round((prev[question.critere] + score) / 2) : score,
+    }));
+
+    setGlobalTestCorrections(prev => ({
+      ...prev,
+      [questionIndex]: {
+        isCorrect,
+        explication: question.explication,
+        bonneReponse: question.choix[question.bonneReponse],
+        userAnswer: question.choix[answerIndex],
+      },
+    }));
+  }, [globalTestQuestions]);
+
+  /**
+   * Corrige une réponse de production écrite du test global
+   */
+  const correctGlobalTestProduction = useCallback(async (questionIndex: number, answer: string) => {
+    const question = globalTestQuestions[questionIndex];
+    if (question.type !== 'production') return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette réponse d'expression écrite pour le test global.
+
+---
+Consigne: ${question.consigne}
+Réponse de l'élève: ${answer}
+Critères à évaluer: ${question.correctionCriteres.join(', ')}
+---
+
+Fais une correction détaillée avec :
+- Un score sur 100
+- Des commentaires sur la grammaire
+- Des commentaires sur le vocabulaire  
+- Des commentaires sur la structure
+- Des conseils pour améliorer
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "grammaire": "[commentaires en français]",
+  "vocabulaire": "[commentaires en français]",
+  "structure": "[commentaires en français]",
+  "conseils": "[conseils en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      const correction = {
+        score: Number(data.score),
+        grammaire: String(data.grammaire || ''),
+        vocabulaire: String(data.vocabulaire || ''),
+        structure: String(data.structure || ''),
+        conseils: String(data.conseils || ''),
+      };
+
+      // Stocker la réponse, le score et la correction
+      setGlobalTestAnswers(prev => ({
+        ...prev,
+        [questionIndex]: answer,
+      }));
+
+      setGlobalTestScores(prev => ({
+        ...prev,
+        [question.critere]: prev[question.critere] ? 
+          Math.round((prev[question.critere] + correction.score) / 2) : correction.score,
+      }));
+
+      setGlobalTestCorrections(prev => ({
+        ...prev,
+        [questionIndex]: correction,
+      }));
+
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [globalTestQuestions]);
+
+  /**
+   * Corrige une réponse orale du test global
+   */
+  const correctGlobalTestOral = useCallback(async (questionIndex: number, transcript: string) => {
+    const question = globalTestQuestions[questionIndex];
+    if (question.type !== 'oral') return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const prompt = `Tu es un professeur d'allemand. Corrige cette réponse d'expression orale pour le test global.
+
+---
+Consigne: ${question.consigne}
+Transcription: ${transcript}
+Critères à évaluer: ${question.correctionCriteres.join(', ')}
+---
+
+Fais une correction détaillée avec :
+- Un score sur 100
+- Des commentaires sur la prononciation
+- Des commentaires sur la grammaire
+- Des commentaires sur le vocabulaire
+- Des conseils pour améliorer
+
+Note : Sois bienveillant. La transcription peut contenir des erreurs de reconnaissance vocale.
+
+Réponds avec UN SEUL objet JSON :
+{
+  "score": number (0-100),
+  "prononciation": "[commentaires en français]",
+  "grammaire": "[commentaires en français]",
+  "vocabulaire": "[commentaires en français]",
+  "conseils": "[conseils en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la correction');
+      }
+
+      const data = await response.json();
+      
+      if (!data.score || data.score < 0 || data.score > 100) {
+        throw new Error('Score invalide');
+      }
+
+      const correction = {
+        score: Number(data.score),
+        prononciation: String(data.prononciation || ''),
+        grammaire: String(data.grammaire || ''),
+        vocabulaire: String(data.vocabulaire || ''),
+        conseils: String(data.conseils || ''),
+        transcript,
+      };
+
+      // Stocker la réponse, le score et la correction
+      setGlobalTestAnswers(prev => ({
+        ...prev,
+        [questionIndex]: transcript,
+      }));
+
+      setGlobalTestScores(prev => ({
+        ...prev,
+        [question.critere]: prev[question.critere] ? 
+          Math.round((prev[question.critere] + correction.score) / 2) : correction.score,
+      }));
+
+      setGlobalTestCorrections(prev => ({
+        ...prev,
+        [questionIndex]: correction,
+      }));
+
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de corriger : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [globalTestQuestions]);
+
+  /**
+   * Passe à la question suivante
+   */
+  const goToNextQuestion = useCallback(() => {
+    if (currentQuestionIndex < globalTestQuestions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    } else {
+      // Dernière question, calculer les résultats finaux
+      calculateGlobalTestResults();
+    }
+  }, [currentQuestionIndex, globalTestQuestions.length]);
+
+  /**
+   * Calcule les résultats finaux du test global
+   */
+  const calculateGlobalTestResults = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setGlobalTestState('results');
+
+    try {
+      // Calculer les scores finaux par critère
+      const scoresFinaux: Record<string, number> = {
+        comprehensionOrale: 0,
+        comprehensionEcrite: 0,
+        expressionOrale: 0,
+        expressionEcrite: 0,
+      };
+
+      // Compter les questions par critère
+      const countParCritere: Record<string, number> = {
+        comprehensionOrale: 0,
+        comprehensionEcrite: 0,
+        expressionOrale: 0,
+        expressionEcrite: 0,
+      };
+
+      // Compter les questions par critère
+      globalTestQuestions.forEach(question => {
+        countParCritere[question.critere] = (countParCritere[question.critere] || 0) + 1;
+      });
+
+      // Calculer les scores moyens par critère
+      Object.entries(globalTestScores).forEach(([critere, score]) => {
+        scoresFinaux[critere as keyof typeof scoresFinaux] += score;
+      });
+
+      // Calculer la moyenne par critère
+      const scoresParCritere: Record<string, number> = {};
+      Object.keys(scoresFinaux).forEach(critere => {
+        if (countParCritere[critere] > 0) {
+          scoresParCritere[critere] = Math.round(scoresFinaux[critere as keyof typeof scoresFinaux] / countParCritere[critere]);
+        } else {
+          scoresParCritere[critere] = 0;
+        }
+      });
+
+      // Calculer le score global
+      const allScores = Object.values(scoresParCritere);
+      const scoreGlobal = Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length);
+
+      // Mettre à jour la progression et obtenir le nouveau niveau
+      const progressionMiseAJour = await mettreAJourProgression();
+
+      // Sauvegarder chaque évaluation
+      globalTestQuestions.forEach((question, index) => {
+        const answer = globalTestAnswers[index];
+        if (answer !== undefined) {
+          const score = globalTestCorrections[index]?.score || 
+                       (question.type === 'qcm' ? 
+                         (answer === question.bonneReponse ? 100 : 0) : 0);
+          
+          addEvaluation({
+            critere: question.critere,
+            portee: 'global',
+            sequenceCible: 'Test global complet',
+            scoreGlobal: score,
+          });
+        }
+      });
+
+      // Déterminer points forts et axes d'amélioration
+      const pointsForts: string[] = [];
+      const axesAmelioration: string[] = [];
+
+      Object.entries(scoresParCritere).forEach(([critere, score]) => {
+        if (score >= 70) {
+          pointsForts.push(critere);
+        } else {
+          axesAmelioration.push(critere);
+        }
+      });
+
+      setGlobalTestResults({
+        scoreGlobal,
+        scoresParCritere,
+        nouveauNiveau: progressionMiseAJour.niveauEstimeCECRL,
+        justification: progressionMiseAJour.justificationMistral || '',
+        pointsForts,
+        axesAmelioration,
+      });
+
+      setIsLoading(false);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      setError(`Impossible de calculer les résultats : ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [globalTestQuestions, globalTestAnswers, globalTestScores, globalTestCorrections]);
+
+  /**
+   * Démarre l'enregistrement pour une question orale du test global
+   */
+  const startGlobalRecording = useCallback(() => {
+    if (typeof window === 'undefined') {
+      setError('La reconnaissance vocale n\'est pas disponible dans cet environnement');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      setError('La reconnaissance vocale n\'est pas supportée par votre navigateur');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'de-DE';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+      setIsRecordingGlobal(true);
+      setOralTranscript('');
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcriptText = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcriptText + ' ';
+        } else {
+          interimTranscript += transcriptText;
+        }
+      }
+
+      setOralTranscript(prev => prev + finalTranscript);
+    };
+
+    recognition.onend = () => {
+      setIsRecordingGlobal(false);
+      // Stocker la transcription dans les réponses si elle n'est pas vide
+      if (oralTranscript.trim()) {
+        setGlobalTestAnswers(prev => ({
+          ...prev,
+          [currentQuestionIndex]: oralTranscript,
+        }));
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      setIsRecordingGlobal(false);
+      setError(`Erreur de reconnaissance vocale : ${event.error}`);
+    };
+
+    recognition.start();
+    (window as any).currentGlobalRecognition = recognition;
+  }, []);
+
+  /**
+   * Arrête l'enregistrement pour une question orale du test global
+   */
+  const stopGlobalRecording = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition && (window as any).currentGlobalRecognition) {
+      (window as any).currentGlobalRecognition.stop();
+    }
+    setIsRecordingGlobal(false);
+    // Stocker la transcription dans les réponses si elle n'est pas vide
+    if (oralTranscript.trim()) {
+      setGlobalTestAnswers(prev => ({
+        ...prev,
+        [currentQuestionIndex]: oralTranscript,
+      }));
+    }
+  }, [currentQuestionIndex, oralTranscript]);
 
   // ==========================================================================
   // RENDU
@@ -2143,20 +2809,414 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       )}
 
       {/* ======================================================================
-           TEST GLOBAL (Placeholder)
+           TEST GLOBAL
          ====================================================================== */}
       {activeTab === 'testGlobal' && (
-        <div className="bg-white rounded-xl shadow-md p-8 text-center">
-          <div className="text-6xl mb-4">{tabs.find(t => t.id === activeTab)?.icon}</div>
-          <h2 className="text-2xl font-bold font-serif text-[#1e1b4b] mb-4">
-            {tabs.find(t => t.id === activeTab)?.label}
-          </h2>
-          <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            {tabs.find(t => t.id === activeTab)?.description}
-          </p>
-          <p className="text-sm text-gray-500">
-            Ce contenu sera développé dans une prochaine étape
-          </p>
+        <div className="space-y-6">
+          {/* Écran de démarrage */}
+          {globalTestState === 'start' && (
+            <div className="bg-white rounded-xl shadow-md p-8 text-center">
+              <div className="text-6xl mb-4">🏆</div>
+              <h2 className="text-2xl font-bold font-serif text-[#1e1b4b] mb-4">
+                Test global
+              </h2>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Ce test couvre toutes vos notions apprises et met à jour votre niveau CECRL
+              </p>
+              <p className="text-sm text-gray-500 mb-8">
+                Durée estimée : ~20 minutes
+              </p>
+              <button
+                onClick={generateGlobalTestQuestions}
+                disabled={isLoading}
+                className={`px-8 py-3 rounded-lg text-white font-medium text-lg transition-colors
+                  ${!isLoading 
+                    ? 'bg-red-600 hover:bg-red-700 cursor-pointer' 
+                    : 'bg-red-300 cursor-not-allowed'}`}
+              >
+                {isLoading ? (
+                  <>
+                    <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white inline-block mr-2"></span>
+                    Génération en cours...
+                  </>
+                ) : (
+                  'Commencer le test global'
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Écran de génération */}
+          {globalTestState === 'generating' && (
+            <div className="bg-white rounded-xl shadow-md p-8 text-center">
+              <div className="text-6xl mb-4">⏳</div>
+              <h2 className="text-2xl font-bold font-serif text-[#1e1b4b] mb-4">
+                Génération du test
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Nous analysons vos leçons et générons un test personnalisé...
+              </p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto"></div>
+            </div>
+          )}
+
+          {/* Écran de test en cours */}
+          {globalTestState === 'inProgress' && globalTestQuestions.length > 0 && (
+            <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+              {/* Barre de progression */}
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-sm font-medium text-gray-600">
+                  Question {currentQuestionIndex + 1} / {globalTestQuestions.length}
+                </span>
+                <div className="w-full mx-4">
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-red-500 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${((currentQuestionIndex) / globalTestQuestions.length) * 100}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Affichage de la question actuelle */}
+              {(() => {
+                const currentQuestion = globalTestQuestions[currentQuestionIndex];
+                const questionAnswer = globalTestAnswers[currentQuestionIndex];
+                
+                if (currentQuestion.type === 'qcm') {
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h3 className="font-medium text-gray-800 mb-2">
+                          Frage {currentQuestionIndex + 1}/{globalTestQuestions.length}
+                        </h3>
+                        <p className="text-gray-700 mb-4">{currentQuestion.question}</p>
+                        
+                        <div className="space-y-2">
+                          {currentQuestion.choix.map((choice, choiceIndex) => {
+                            const isSelected = questionAnswer === choiceIndex;
+                            const isCorrect = globalTestCorrections[currentQuestionIndex]?.isCorrect;
+                            const isAnswered = questionAnswer !== undefined;
+                            
+                            return (
+                              <label
+                                key={choiceIndex}
+                                className={`flex items-center gap-3 p-3 rounded-md cursor-pointer border-2 transition-colors
+                                  ${isSelected 
+                                    ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50')
+                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`global-qcm-${currentQuestionIndex}`}
+                                  value={choiceIndex}
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    const answerIndex = Number(e.target.value);
+                                    correctGlobalTestQCM(currentQuestionIndex, answerIndex);
+                                  }}
+                                  disabled={isAnswered}
+                                  className="h-4 w-4 text-red-600 focus:ring-red-500"
+                                />
+                                <span className="text-gray-700">{choice}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Bouton suivant */}
+                      {questionAnswer !== undefined && (
+                        <button
+                          onClick={goToNextQuestion}
+                          className="px-6 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                        >
+                          Question suivante →
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                else if (currentQuestion.type === 'production') {
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-purple-50 rounded-lg p-4">
+                        <h3 className="font-medium text-purple-800 mb-2">
+                          Frage {currentQuestionIndex + 1}/{globalTestQuestions.length}
+                        </h3>
+                        <p className="text-purple-700 mb-4">{currentQuestion.consigne}</p>
+                        
+                        <textarea
+                          value={questionAnswer || ''}
+                          onChange={(e) => {
+                            setGlobalTestAnswers(prev => ({
+                              ...prev,
+                              [currentQuestionIndex]: e.target.value,
+                            }));
+                          }}
+                          placeholder="Schreiben Sie Ihre Antwort hier auf Deutsch..."
+                          className="w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[150px]"
+                          rows={6}
+                          disabled={globalTestCorrections[currentQuestionIndex]}
+                        />
+                        
+                        {/* Boutons */}
+                        <div className="flex gap-3 mt-4">
+                          {globalTestCorrections[currentQuestionIndex] ? (
+                            <button
+                              onClick={goToNextQuestion}
+                              className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium"
+                            >
+                              Question suivante →
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                await correctGlobalTestProduction(currentQuestionIndex, questionAnswer || '');
+                              }}
+                              disabled={!questionAnswer || isLoading}
+                              className={`px-6 py-2 rounded-md text-white font-medium transition-colors
+                                ${!questionAnswer || isLoading 
+                                  ? 'bg-purple-300 cursor-not-allowed' 
+                                  : 'bg-purple-600 hover:bg-purple-700 cursor-pointer'}`}
+                            >
+                              {isLoading ? 'Korrektur läuft...' : 'Corriger'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                else if (currentQuestion.type === 'oral') {
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <h3 className="font-medium text-green-800 mb-2">
+                          Frage {currentQuestionIndex + 1}/{globalTestQuestions.length}
+                        </h3>
+                        <p className="text-green-700 mb-4">{currentQuestion.consigne}</p>
+                        
+                        {/* Zone de transcription */}
+                        <div className="bg-white rounded-md p-4 border border-green-200">
+                          <p className="text-sm font-medium text-gray-700 mb-2">
+                            Transkription:
+                          </p>
+                          <p className="text-gray-600 whitespace-pre-wrap min-h-[80px]">
+                            {oralTranscript || (questionAnswer || 'Sprechen Sie hier...')}
+                          </p>
+                        </div>
+
+                        {/* Boutons d'enregistrement */}
+                        <div className="flex gap-3 mt-4">
+                          {!isRecordingGlobal && !questionAnswer ? (
+                            <button
+                              onClick={startGlobalRecording}
+                              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex-1"
+                            >
+                              🎤 Aufnahme starten
+                            </button>
+                          ) : null}
+                          
+                          {isRecordingGlobal && (
+                            <button
+                              onClick={stopGlobalRecording}
+                              className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                            >
+                              ⏹ Aufnahme stoppen
+                            </button>
+                          )}
+                          
+                          {!isRecordingGlobal && questionAnswer && !globalTestCorrections[currentQuestionIndex] && (
+                            <button
+                              onClick={async () => {
+                                await correctGlobalTestOral(currentQuestionIndex, questionAnswer);
+                              }}
+                              disabled={isLoading}
+                              className={`px-6 py-2 rounded-md text-white font-medium transition-colors
+                                ${isLoading 
+                                  ? 'bg-green-300 cursor-not-allowed' 
+                                  : 'bg-green-600 hover:bg-green-700 cursor-pointer'}`}
+                            >
+                              {isLoading ? 'Korrektur läuft...' : 'Corriger'}
+                            </button>
+                          )}
+                          
+                          {globalTestCorrections[currentQuestionIndex] && (
+                            <button
+                              onClick={goToNextQuestion}
+                              className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                            >
+                              Question suivante →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+            </div>
+          )}
+
+          {/* Écran de résultats */}
+          {globalTestState === 'results' && globalTestResults && (
+            <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
+              {/* Résultat global */}
+              <div className="text-center">
+                <h2 className="text-2xl font-bold font-serif mb-2">
+                  {globalTestResults.scoreGlobal >= 80 ? (
+                    <span className="text-green-600">✓ Excellent travail !</span>
+                  ) : globalTestResults.scoreGlobal >= 50 ? (
+                    <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                  ) : (
+                    <span className="text-red-600">✗ Revisez vos compétences</span>
+                  )}
+                </h2>
+                <div className="text-5xl font-bold mb-2">
+                  <span className={globalTestResults.scoreGlobal >= 80 ? 'text-green-600' : 
+                                        globalTestResults.scoreGlobal >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                    {globalTestResults.scoreGlobal}/100
+                  </span>
+                </div>
+                <p className="text-gray-600">
+                  Score global du test
+                </p>
+              </div>
+
+              {/* Nouveau niveau CECRL */}
+              <div className="bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl p-6 text-white">
+                <h3 className="text-lg font-semibold mb-3 text-center">
+                  Nouveau niveau CECRL estimé
+                </h3>
+                <div className="text-center">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white/20 border-2 border-white/30 mb-4">
+                    <span className="text-4xl font-bold">{globalTestResults.nouveauNiveau}</span>
+                  </div>
+                  <p className="text-sm opacity-90 max-w-md mx-auto">
+                    {globalTestResults.justification}
+                  </p>
+                </div>
+              </div>
+
+              {/* Scores par critère */}
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h3 className="text-lg font-semibold mb-4 text-center">
+                  Scores par compétence
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(globalTestResults.scoresParCritere).map(([critere, score]) => {
+                    const isPointFort = globalTestResults.pointsForts.includes(critere);
+                    return (
+                      <div
+                        key={critere}
+                        className={`p-4 rounded-lg ${isPointFort ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-gray-700">
+                            {critere === 'comprehensionOrale' && 'Compréhension orale'}
+                            {critere === 'comprehensionEcrite' && 'Compréhension écrite'}
+                            {critere === 'expressionOrale' && 'Expression orale'}
+                            {critere === 'expressionEcrite' && 'Expression écrite'}
+                          </span>
+                          <span className={`font-bold ${isPointFort ? 'text-green-600' : 'text-orange-600'}`}>
+                            {score}/100
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${isPointFort ? 'bg-green-500' : 'bg-orange-500'}`}
+                            style={{ width: `${score}%` }}
+                          ></div>
+                        </div>
+                        <p className={`text-xs mt-2 ${isPointFort ? 'text-green-600' : 'text-orange-600'}`}>
+                          {isPointFort ? '✓ Point fort' : '⚠ À améliorer'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Points forts et axes d'amélioration */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Points forts */}
+                {globalTestResults.pointsForts.length > 0 && (
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <h4 className="font-medium text-green-800 mb-3 text-center">
+                      ✓ Points forts
+                    </h4>
+                    <ul className="text-sm text-green-700 space-y-2">
+                      {globalTestResults.pointsForts.map((critere, index) => (
+                        <li key={index} className="flex items-center gap-2">
+                          <span>✓</span>
+                          <span>
+                            {critere === 'comprehensionOrale' && 'Compréhension orale'}
+                            {critere === 'comprehensionEcrite' && 'Compréhension écrite'}
+                            {critere === 'expressionOrale' && 'Expression orale'}
+                            {critere === 'expressionEcrite' && 'Expression écrite'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Axes d'amélioration */}
+                {globalTestResults.axesAmelioration.length > 0 && (
+                  <div className="bg-orange-50 rounded-lg p-4">
+                    <h4 className="font-medium text-orange-800 mb-3 text-center">
+                      ⚠ Axes d'amélioration
+                    </h4>
+                    <ul className="text-sm text-orange-700 space-y-2">
+                      {globalTestResults.axesAmelioration.map((critere, index) => (
+                        <li key={index} className="flex items-center gap-2">
+                          <span>⚠</span>
+                          <span>
+                            {critere === 'comprehensionOrale' && 'Compréhension orale'}
+                            {critere === 'comprehensionEcrite' && 'Compréhension écrite'}
+                            {critere === 'expressionOrale' && 'Expression orale'}
+                            {critere === 'expressionEcrite' && 'Expression écrite'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Boutons d'action */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                <Link
+                  href="/"
+                  className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium text-center"
+                >
+                  Retour au dashboard
+                </Link>
+                <button
+                  onClick={() => {
+                    setGlobalTestState('start');
+                    setGlobalTestQuestions([]);
+                    setCurrentQuestionIndex(0);
+                    setGlobalTestAnswers({});
+                    setGlobalTestScores({});
+                    setGlobalTestCorrections({});
+                    setGlobalTestResults(null);
+                    setOralTranscript('');
+                  }}
+                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Recommencer le test
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
