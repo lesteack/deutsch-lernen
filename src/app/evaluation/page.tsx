@@ -130,6 +130,15 @@ interface ProductionAnswerCorrection {
   conseils: string;
 }
 
+/** Type pour la correction individuelle d'une question de production */
+interface IndividualProductionCorrection {
+  estCorrect: boolean;
+  score: number;
+  correction: string;
+  bonneReponse: string;
+  encouragement: string;
+}
+
 /** Type de source pour le thème */
 type ThemeSource = 'cours' | 'libre';
 
@@ -221,6 +230,12 @@ export default function EvaluationPage() {
   
   // État pour la correction des réponses de production (CO/CE)
   const [productionCorrection, setProductionCorrection] = useState<ProductionAnswerCorrection | null>(null);
+  
+  // État pour les corrections individuelles des questions de production (CE/CO)
+  const [individualProductionCorrections, setIndividualProductionCorrections] = useState<Record<number, IndividualProductionCorrection>>({});
+  
+  // État pour indiquer si la correction est en cours
+  const [isCorrecting, setIsCorrecting] = useState(false);
   
   // État pour le test global
   const [globalTestState, setGlobalTestState] = useState<GlobalTestState>('start');
@@ -835,18 +850,68 @@ IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans 
   // ==========================================================================
 
   /**
+   * Corrige une réponse de production individuelle avec le texte du document
+   */
+  const correctIndividualProduction = useCallback(async (
+    text: string, 
+    question: string, 
+    userAnswer: string
+  ): Promise<IndividualProductionCorrection> => {
+    const prompt = `Tu es un professeur d'allemand. 
+Voici le texte étudié : ${text}
+Question : ${question}
+Réponse de l'élève : ${userAnswer}
+
+Évalue la réponse et retourne un JSON :
+{
+  'estCorrect': boolean,
+  'score': number (0-100),
+  'correction': 'Explication si la réponse est fausse ou incomplète, en français',
+  'bonneReponse': 'La réponse attendue en allemand',
+  'encouragement': 'Message court encourageant en français'
+}`;
+
+    const response = await fetch('/api/mistral', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        responseFormat: 'json_object',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erreur lors de la correction');
+    }
+
+    const data = await response.json();
+    
+    return {
+      estCorrect: Boolean(data.estCorrect),
+      score: Number(data.score) || 0,
+      correction: String(data.correction || ''),
+      bonneReponse: String(data.bonneReponse || ''),
+      encouragement: String(data.encouragement || ''),
+    };
+  }, []);
+
+  /**
    * Corrige les réponses de compréhension (mix QCM + production)
    */
   const correctComprehensionAnswers = useCallback(async () => {
     if (!evaluationData) return;
 
-    setIsLoading(true);
+    setIsCorrecting(true);
     setError(null);
 
     try {
       // Compter les bonnes réponses QCM
       let correctCount = 0;
       let qcmCount = 0;
+      const qcmScores: Record<number, number> = {};
       
       for (let i = 0; i < evaluationData.questions.length; i++) {
         const question = evaluationData.questions[i];
@@ -855,6 +920,9 @@ IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans 
           const userAnswer = answers.qcm?.[i];
           if (userAnswer !== undefined && userAnswer === question.bonneReponse) {
             correctCount++;
+            qcmScores[i] = 100;
+          } else if (userAnswer !== undefined) {
+            qcmScores[i] = 0;
           }
         }
       }
@@ -862,17 +930,24 @@ IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans 
       // Corriger les questions de production avec Mistral
       const productionQuestions = evaluationData.questions.filter(q => q.type === 'production');
       let productionScore = 0;
-      const productionCorrections: Record<number, ProductionAnswerCorrection> = {};
+      const newIndividualCorrections: Record<number, IndividualProductionCorrection> = {};
       
       for (const [indexStr, answerText] of Object.entries(answers.production || {})) {
         const index = parseInt(indexStr);
         const question = evaluationData.questions[index];
         if (question && question.type === 'production' && answerText) {
-          const correction = await correctProductionAnswer(answerText, question, niveauCECRL);
-          productionCorrections[index] = correction;
+          const correction = await correctIndividualProduction(
+            evaluationData.generatedText.texte,
+            question.question,
+            answerText
+          );
+          newIndividualCorrections[index] = correction;
           productionScore += correction.score;
         }
       }
+
+      // Stocker les corrections individuelles
+      setIndividualProductionCorrections(newIndividualCorrections);
 
       // Score final : moyenne entre QCM et production
       const totalQuestions = evaluationData.questions.length;
@@ -890,14 +965,14 @@ IMPORTANT : TOUT doit être en allemand. Réponds UNIQUEMENT avec le JSON, sans 
       // Sauvegarder l'évaluation
       saveEvaluation(finalScore, activeTab === 'comprehensionOrale' ? 'comprehensionOrale' : 'comprehensionEcrite');
       
-      setIsLoading(false);
+      setIsCorrecting(false);
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
       setError(`Impossible de corriger : ${errorMessage}`);
-      setIsLoading(false);
+      setIsCorrecting(false);
     }
-  }, [evaluationData, answers, activeTab, niveauCECRL]);
+  }, [evaluationData, answers, activeTab, niveauCECRL, correctIndividualProduction]);
 
   /**
    * Corrige la réponse de compréhension orale (réponse rédigée) via Mistral
@@ -1024,6 +1099,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       conseils: String(data.conseils || ''),
     };
   }, []);
+
+
 
   /**
    * Corrige l'expression écrite
@@ -2405,8 +2482,8 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
           {/* Indicateur de progression */}
           <div className="text-sm text-gray-500">
-            {Object.keys(answers.qcm || {}).length} QCM beantwortet, 
-            {Object.keys(answers.production || {}).length} Produktionsfragen beantwortet
+            {Object.keys(answers.qcm || {}).length}/2 QCM beantwortet, 
+            {Object.keys(answers.production || {}).length}/3 Produktionsfragen beantwortet
           </div>
 
           {/* Boutons */}
@@ -2422,13 +2499,13 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                   : 'bg-blue-300 cursor-not-allowed'}`}
             >
-              {isLoading ? (
+              {isCorrecting ? (
                 <>
                   <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
-                  Korrektur läuft...
+                  Mistral corrige vos réponses...
                 </>
               ) : (
-                'Antworten überprüfen'
+                'Corriger mes réponses'
               )}
             </button>
           </div>
@@ -2614,15 +2691,17 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           <div className="text-center">
             <h2 className="text-2xl font-bold font-serif mb-2">
               {score >= 80 ? (
-                <span className="text-green-600">✓ Excellent travail !</span>
-              ) : score >= 50 ? (
-                <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                <span className="text-green-600">Excellent ! 🎉</span>
+              ) : score >= 60 ? (
+                <span className="text-blue-600">Bien joué ! 👍</span>
+              ) : score >= 40 ? (
+                <span className="text-orange-600">Pas mal, continuez ! 💪</span>
               ) : (
-                <span className="text-red-600">✗ Revisez ces notions</span>
+                <span className="text-red-600">Courage, pratiquez encore ! 📚</span>
               )}
             </h2>
             <div className="text-5xl font-bold mb-2">
-              <span className={score >= 80 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+              <span className={score >= 80 ? 'text-green-600' : score >= 60 ? 'text-blue-600' : score >= 40 ? 'text-orange-600' : 'text-red-600'}>
                 {score}/100
               </span>
             </div>
@@ -2705,6 +2784,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 if (question.type === 'qcm') {
                   const userAnswer = answers.qcm?.[index];
                   const isCorrect = userAnswer !== undefined && userAnswer === question.bonneReponse;
+                  const questionScore = isCorrect ? 100 : 0;
                   
                   return (
                     <div
@@ -2724,6 +2804,9 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                         <span className="text-gray-600">Richtige Antwort:</span> 
                         <span className="text-green-700 font-medium">{question.choix[question.bonneReponse]}</span>
                       </p>
+                      <p className="text-sm font-medium text-gray-700 mt-2">
+                        Score: <span className={isCorrect ? 'text-green-600' : 'text-red-600'}>{questionScore}/100</span>
+                      </p>
                       {question.explication && (
                         <p className="text-xs text-gray-500 mt-1">{question.explication}</p>
                       )}
@@ -2731,16 +2814,44 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   );
                 } else if (question.type === 'production') {
                   const userAnswer = answers.production?.[index];
+                  const individualCorrection = individualProductionCorrections[index];
+                  
                   return (
-                    <div key={index} className="p-3 rounded-md border-l-4 border-blue-500 bg-blue-50">
+                    <div 
+                      key={index} 
+                      className={`p-3 rounded-md border-l-4 ${individualCorrection?.estCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                    >
                       <p className="font-medium text-gray-800 mb-1">
                         Frage {index + 1}: {question.question}
                       </p>
                       <p className="text-sm text-gray-600 mb-1">{question.consigne}</p>
-                      <p className="text-sm">
+                      <p className="text-sm mb-2">
                         <span className="text-gray-600">Ihre Antwort:</span> 
-                        <span className="text-blue-700">{userAnswer || 'Nicht beantwortet'}</span>
+                        <span className="text-gray-700">{userAnswer || 'Nicht beantwortet'}</span>
                       </p>
+                      {individualCorrection && (
+                        <div className="mt-2 space-y-2">
+                          <p className="text-sm font-medium text-gray-700">
+                            Score: <span className={individualCorrection.estCorrect ? 'text-green-600' : 'text-red-600'}>
+                              {individualCorrection.score}/100
+                            </span>
+                          </p>
+                          {individualCorrection.estCorrect ? (
+                            <p className="text-sm text-green-700 bg-green-100 p-2 rounded">
+                              ✅ {individualCorrection.encouragement}
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              <p className="text-sm text-red-700 bg-red-100 p-2 rounded">
+                                ❌ {individualCorrection.correction}
+                              </p>
+                              <p className="text-sm bg-yellow-100 p-2 rounded text-black">
+                                <span className="font-medium">Bonne réponse attendue:</span> {individualCorrection.bonneReponse}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 }
