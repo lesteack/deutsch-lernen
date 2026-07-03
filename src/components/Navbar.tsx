@@ -55,6 +55,7 @@ export default function Navbar() {
             <NavLink href="/lecons">Leçons</NavLink>
             <NavLink href="/exercices">Exercices</NavLink>
             <NavLink href="/evaluation">Évaluation</NavLink>
+            <NavLink href="/profil">Profil</NavLink>
           </div>
 
           {/* Bouton mobile */}
@@ -114,6 +115,9 @@ function MobileMenu() {
           </MobileNavLink>
           <MobileNavLink href="/evaluation" pathname={pathname} onClick={() => setIsOpen(false)}>
             Évaluation
+          </MobileNavLink>
+          <MobileNavLink href="/profil" pathname={pathname} onClick={() => setIsOpen(false)}>
+            Profil
           </MobileNavLink>
         </div>
       )}

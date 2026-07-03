@@ -1,15 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   getProgression,
   getExercices,
+  getAllLecons,
+  getEvaluations,
   type SuiviProgression,
   type Exercice,
+  type Lecon,
+  type Evaluation,
   type NiveauCECRL,
 } from '@/lib/storage';
-import { calculerScoresParCritere, calculerScoreGlobal } from '@/lib/progression';
+import { calculerScoresParCritere, calculerScoreGlobal, type ScoresParCritere } from '@/lib/progression';
+import { getBadgesDebloques, sauvegarderBadgesDebloques, badges, type Badge } from '@/lib/badges';
 
 // ============================================================================
 // COULEURS - Design moderne et motivant
@@ -55,12 +60,15 @@ const skillLabels: Record<string, string> = {
 export default function DashboardPage() {
   const [progression, setProgression] = useState<SuiviProgression | null>(null);
   const [exercices, setExercices] = useState<Exercice[]>([]);
-  const [scores, setScores] = useState<Record<string, number>>({
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [lecons, setLecons] = useState<Lecon[]>([]);
+  const [scores, setScores] = useState<ScoresParCritere>({
     comprehensionOrale: 0,
     comprehensionEcrite: 0,
     expressionOrale: 0,
     expressionEcrite: 0,
   });
+  const [badgesDebloques, setBadgesDebloques] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Charger les données au montage
@@ -68,11 +76,18 @@ export default function DashboardPage() {
     const loadData = () => {
       const prog = getProgression();
       const exs = getExercices();
+      const evals = getEvaluations();
+      const leconsData = getAllLecons();
       const calcScores = calculerScoresParCritere();
+      const unlockedBadges = getBadgesDebloques(prog);
       
       setProgression(prog);
       setExercices(exs);
+      setEvaluations(evals);
+      setLecons(leconsData);
       setScores(calcScores);
+      setBadgesDebloques(unlockedBadges);
+      sauvegarderBadgesDebloques(prog);
       setIsLoading(false);
     };
     
@@ -82,10 +97,51 @@ export default function DashboardPage() {
   // Calculer le score global
   const scoreGlobal = calculerScoreGlobal(scores);
 
-  // Obtenir les 5 derniers exercices
-  const dernierExercices = [...exercices]
-    .sort((a, b) => new Date(b.dateRealisation).getTime() - new Date(a.dateRealisation).getTime())
+  // Message du streak
+  const getStreakMessage = useCallback((streak: number | undefined): string => {
+    if (!streak || streak === 0) return 'Commencez aujourd\'hui !';
+    if (streak >= 1 && streak <= 6) return 'Continuez comme ça !';
+    if (streak >= 7 && streak <= 29) return `🔥 ${streak} jours de suite, impressionnant !`;
+    return `🏆 ${streak} jours, vous êtes une machine !`;
+  }, []);
+
+  // Obtenir les 5 derniers exercices/évaluations
+  const dernierExercices = [...evaluations, ...exercices]
+    .filter(item => 'scoreGlobal' in item ? item.scoreGlobal !== undefined : item.score !== undefined)
+    .sort((a, b) => {
+      const dateA = new Date(a.dateRealisation).getTime();
+      const dateB = new Date(b.dateRealisation).getTime();
+      return dateB - dateA;
+    })
     .slice(0, 5);
+
+  // Trouver la leçon la plus ancienne non testée
+  const getProchaineLeconSuggeree = useCallback((): Lecon | null => {
+    if (lecons.length === 0) return null;
+    
+    // Filtrer les leçons qui n'ont pas encore été utilisées dans une évaluation
+    const leconsNonTestees = lecons.filter(lecon => {
+      // Vérifier si cette leçon a été utilisée dans une évaluation
+      return !evaluations.some(evalItem => 
+        evalItem.sequenceCible?.includes(lecon.titre) ||
+        evalItem.sequenceCible?.includes(lecon.id)
+      );
+    });
+    
+    if (leconsNonTestees.length === 0) {
+      // Si toutes les leçons ont été testées, retourner la plus ancienne
+      const sortedLecons = [...lecons].sort((a, b) => 
+        new Date(a.dateAjout).getTime() - new Date(b.dateAjout).getTime()
+      );
+      return sortedLecons[0] ?? null;
+    }
+    
+    // Retourner la leçon non testée la plus ancienne
+    const sortedNonTestees = [...leconsNonTestees].sort((a, b) => 
+      new Date(a.dateAjout).getTime() - new Date(b.dateAjout).getTime()
+    );
+    return sortedNonTestees[0] ?? null;
+  }, [lecons, evaluations]);
 
   // Format de date lisible
   const formatDate = (dateString: string) => {
@@ -95,6 +151,14 @@ export default function DashboardPage() {
       year: 'numeric',
     });
   };
+
+  // Couleur du score
+  const getScoreColor = useCallback((score: number | undefined): string => {
+    if (score === undefined) return 'bg-gray-100 text-gray-700';
+    if (score >= 80) return 'bg-green-100 text-green-700';
+    if (score >= 60) return 'bg-yellow-100 text-yellow-700';
+    return 'bg-red-100 text-red-700';
+  }, []);
 
   if (isLoading) {
     return (
@@ -126,7 +190,7 @@ export default function DashboardPage() {
          ====================================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Niveau CECRL */}
-        <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden">
+        <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden card-hover-lift">
           <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-blue-100 to-purple-100"></div>
           <div className="relative">
             <h2 className="text-sm font-medium text-gray-500 mb-2">
@@ -134,7 +198,7 @@ export default function DashboardPage() {
             </h2>
             <div className="flex items-center gap-3 mb-2">
               <span
-                className="px-4 py-2 rounded-full border-2 font-bold text-lg"
+                className={`px-4 py-2 rounded-full border-2 font-bold text-lg animate-scale-in tooltip-container`}
                 style={{
                   backgroundColor: niveauColor.bg,
                   color: niveauColor.text,
@@ -142,36 +206,35 @@ export default function DashboardPage() {
                 }}
               >
                 {progression?.niveauEstimeCECRL || 'A1'}
+                {progression?.justificationMistral && (
+                  <span className="tooltip-text max-w-xs">{progression.justificationMistral}</span>
+                )}
               </span>
               <span className="text-gray-600">
                 Niveau actuel
               </span>
             </div>
-            {progression?.justificationMistral && (
-              <p className="text-xs text-gray-500 italic truncate">
-                {progression.justificationMistral.substring(0, 80)}...
-              </p>
-            )}
+            <p className="text-xs text-gray-500 italic">
+              Estimé via Mistral
+            </p>
           </div>
         </div>
 
         {/* Streak */}
-        <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden">
+        <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden card-hover-lift">
           <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-orange-100 to-red-100"></div>
           <div className="relative">
             <h2 className="text-sm font-medium text-gray-500 mb-2">
               Streak
             </h2>
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-3xl">🔥</span>
+              <span className="text-3xl streak-fire">🔥</span>
               <span className="text-3xl font-bold text-orange-600">
                 {progression?.streak || 0}
               </span>
             </div>
             <p className="text-sm text-gray-600">
-              {progression?.streak === 1 
-                ? '1 jour consécutif' 
-                : `${progression?.streak || 0} jours consécutifs`}
+              {getStreakMessage(progression?.streak)}
             </p>
           </div>
         </div>
@@ -199,7 +262,7 @@ export default function DashboardPage() {
       {/* ======================================================================
            BARRES DE PROGRESSION PAR COMPÉTENCE
          ====================================================================== */}
-      <div className="bg-white rounded-xl shadow-md p-6">
+      <div className="bg-white rounded-xl shadow-md p-6 card-hover-lift">
         <h2 className="text-lg font-semibold mb-4" style={{ color: colors.primary }}>
           Progression par compétence
         </h2>
@@ -214,7 +277,7 @@ export default function DashboardPage() {
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
-                  className={`h-3 rounded-full transition-all duration-500 ${skillColors[skill as keyof typeof skillColors] || 'bg-blue-500'}`}
+                  className={`h-3 rounded-full progress-bar-fill transition-all duration-1000 ${skillColors[skill as keyof typeof skillColors] || 'bg-blue-500'}`}
                   style={{ width: `${score}%` }}
                 ></div>
               </div>
@@ -224,67 +287,133 @@ export default function DashboardPage() {
       </div>
 
       {/* ======================================================================
-           DERNIERS EXERCICES
+           PROCHAIN EXERCICE SUGGÉRÉ
          ====================================================================== */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold" style={{ color: colors.primary }}>
-            Derniers exercices
-          </h2>
-          {dernierExercices.length > 0 && (
+      {lecons.length > 0 && (
+        <div className="bg-white rounded-xl shadow-md p-6 card-hover-lift">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold" style={{ color: colors.primary }}>
+              Prochain exercice suggéré
+            </h2>
             <Link
               href="/exercices"
               className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
             >
               Voir tous les exercices →
             </Link>
+          </div>
+          
+          {(() => {
+            const prochaineLecon = getProchaineLeconSuggeree();
+            if (!prochaineLecon) {
+              return (
+                <div className="text-center py-8 text-gray-500">
+                  <p>Toutes les leçons ont été testées !</p>
+                  <p className="mt-2 text-sm">
+                    Félicitations, vous avez couvert tout votre contenu.
+                  </p>
+                </div>
+              );
+            }
+            
+            return (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+                    <span className="text-xl text-white">📖</span>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-800">{prochaineLecon.titre}</h3>
+                    <p className="text-sm text-gray-600">{prochaineLecon.type}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Ajoutée le {formatDate(prochaineLecon.dateAjout)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    href={`/exercices?lecon=${encodeURIComponent(prochaineLecon.id)}`}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium btn-pulse"
+                  >
+                    Commencer
+                  </Link>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ======================================================================
+           DERNIERS RÉSULTATS
+         ====================================================================== */}
+      <div className="bg-white rounded-xl shadow-md p-6 card-hover-lift">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold" style={{ color: colors.primary }}>
+            Derniers résultats
+          </h2>
+          {dernierExercices.length > 0 && (
+            <Link
+              href="/evaluation"
+              className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Faire une nouvelle évaluation →
+            </Link>
           )}
         </div>
 
         {dernierExercices.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            <p>Aucun exercice effectué pour le moment.</p>
+            <p>Aucun résultat enregistré pour le moment.</p>
             <p className="mt-2 text-sm">
-              Commencez par en générer un !
+              Commencez par faire un exercice ou une évaluation !
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {dernierExercices.map((exercice, index) => (
-              <div
-                key={exercice.id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-gray-600">
-                      {index + 1}.
-                    </span>
-                    <span className="font-medium" style={{ color: colors.primary }}>
-                      {exercice.type === 'qcm' ? 'QCM' : 
-                       exercice.type === 'texteATrous' ? 'Texte à trous' :
-                       exercice.type === 'conjugaison' ? 'Conjugaison' :
-                       exercice.type}
+            {dernierExercices.map((item, index) => {
+              // Extraire le score et la date
+              const score = 'scoreGlobal' in item ? item.scoreGlobal : 'score' in item ? item.score : 0;
+              const date = item.dateRealisation;
+              const type = 'critere' in item ? item.critere : 'type' in item ? item.type : 'exercice';
+              const titre = 'critere' in item ? 
+                (type === 'comprehensionOrale' ? 'Compréhension orale' :
+                 type === 'comprehensionEcrite' ? 'Compréhension écrite' :
+                 type === 'expressionOrale' ? 'Expression orale' :
+                 type === 'expressionEcrite' ? 'Expression écrite' : type) :
+                (type === 'qcm' ? 'QCM' :
+                 type === 'texteATrous' ? 'Texte à trous' :
+                 type === 'traduction' ? 'Traduction' :
+                 type === 'production' ? 'Production' : type);
+              
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-gray-600">
+                        {index + 1}.
+                      </span>
+                      <span className="font-medium" style={{ color: colors.primary }}>
+                        {titre}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {formatDate(date)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                            <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getScoreColor(score)}`}
+                    >
+                      {score !== undefined ? `${Math.round(score)}/100` : 'Non noté'}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {formatDate(exercice.dateRealisation)}
-                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs font-medium
-                      ${exercice.score && exercice.score >= 80 
-                        ? 'bg-green-100 text-green-700' 
-                        : exercice.score && exercice.score >= 50 
-                          ? 'bg-yellow-100 text-yellow-700' 
-                          : 'bg-red-100 text-red-700'}`}
-                  >
-                    {exercice.score ? `${exercice.score}/100` : 'Non noté'}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -295,7 +424,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Link
           href="/exercices"
-          className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group"
+          className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group card-hover-lift"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -314,7 +443,7 @@ export default function DashboardPage() {
 
         <Link
           href="/evaluation"
-          className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group"
+          className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow group card-hover-lift"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -333,7 +462,43 @@ export default function DashboardPage() {
       </div>
 
       {/* ======================================================================
-           CONSEILS / MOTIVATION
+           BADGES DÉBLOQUÉS (aperçu)
+         ====================================================================== */}
+      {badgesDebloques.length > 0 && (
+        <div className="bg-white rounded-xl shadow-md p-6 card-hover-lift">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold" style={{ color: colors.primary }}>
+              Vos badges ({badgesDebloques.length}/{badges.length})
+            </h2>
+            <Link
+              href="/profil"
+              className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Voir tous les badges →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {badgesDebloques.slice(0, 4).map((badge) => (
+              <div
+                key={badge.id}
+                className="bg-gray-50 rounded-lg p-4 text-center badge-animated"
+              >
+                <span className="text-3xl mb-2 block">{badge.emoji}</span>
+                <h3 className="font-semibold text-gray-800 text-sm">{badge.nom}</h3>
+                <p className="text-xs text-gray-600 truncate">{badge.description}</p>
+              </div>
+            ))}
+            {badgesDebloques.length > 4 && (
+              <div className="bg-gray-50 rounded-lg p-4 text-center flex items-center justify-center">
+                <span className="text-2xl">+{badgesDebloques.length - 4}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================
+           MOTIVATION
          ====================================================================== */}
       {progression?.streak && progression.streak > 0 && (
         <div className="bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl shadow-md p-6 text-white">
