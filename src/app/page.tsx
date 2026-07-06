@@ -7,11 +7,15 @@ import {
   getExercices,
   getAllLecons,
   getEvaluations,
+  getProgramme,
+  determineBlocEnCours,
+  calculerProgressionGlobale,
   type SuiviProgression,
   type Exercice,
   type Lecon,
   type Evaluation,
   type NiveauCECRL,
+  type ProgrammeBloc,
 } from '@/lib/storage';
 import { calculerScoresParCritere, calculerScoreGlobal, type ScoresParCritere } from '@/lib/progression';
 import { getBadgesDebloques, sauvegarderBadgesDebloques, badges, type Badge } from '@/lib/badges';
@@ -62,6 +66,9 @@ export default function DashboardPage() {
   const [exercices, setExercices] = useState<Exercice[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [lecons, setLecons] = useState<Lecon[]>([]);
+  const [programme, setProgramme] = useState<ProgrammeBloc[]>([]);
+  const [blocEnCours, setBlocEnCours] = useState<ProgrammeBloc | null>(null);
+  const [progressionPourcentage, setProgressionPourcentage] = useState<number>(0);
   const [scores, setScores] = useState<ScoresParCritere>({
     comprehensionOrale: 0,
     comprehensionEcrite: 0,
@@ -78,6 +85,7 @@ export default function DashboardPage() {
       const exs = getExercices();
       const evals = getEvaluations();
       const leconsData = getAllLecons();
+      const programmeData = getProgramme();
       const calcScores = calculerScoresParCritere();
       const unlockedBadges = getBadgesDebloques(prog);
       
@@ -85,9 +93,19 @@ export default function DashboardPage() {
       setExercices(exs);
       setEvaluations(evals);
       setLecons(leconsData);
+      setProgramme(programmeData);
       setScores(calcScores);
       setBadgesDebloques(unlockedBadges);
       sauvegarderBadgesDebloques(prog);
+      
+      // Calculer la progression dans le programme
+      if (prog) {
+        const pct = calculerProgressionGlobale(prog.niveauEstimeCECRL);
+        setProgressionPourcentage(pct);
+        const currentBloc = determineBlocEnCours(prog.niveauEstimeCECRL);
+        setBlocEnCours(currentBloc);
+      }
+      
       setIsLoading(false);
     };
     
@@ -258,6 +276,50 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ======================================================================
+           MA PROGRESSION DANS LE PROGRAMME
+         ====================================================================== */}
+      {programme.length > 0 && progression && (
+        <div className="bg-gradient-to-r from-[#3730a3] to-[#6366f1] rounded-xl shadow-md p-6 text-white">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex-1">
+              <h2 className="text-xl font-bold mb-2">
+                Ma progression dans le programme
+              </h2>
+              <p className="text-sm opacity-90">
+                {blocEnCours 
+                  ? `Bloc ${blocEnCours.numero} en cours : ${blocEnCours.titre}`
+                  : `Prêt à commencer le Bloc 1`
+                }
+              </p>
+              <p className="text-sm opacity-75 mt-1">
+                Prochain jalon : {blocEnCours?.sections.jalon || programme[0]?.sections.jalon}
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold">{progressionPourcentage}%</div>
+                <div className="text-xs opacity-75">Complet</div>
+              </div>
+              <Link
+                href="/programme"
+                className="px-4 py-2 bg-white text-indigo-700 rounded-md hover:bg-gray-100 transition-colors text-sm font-medium whitespace-nowrap"
+              >
+                Voir mon programme →
+              </Link>
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="w-full bg-white/20 rounded-full h-2">
+              <div
+                className="bg-white h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progressionPourcentage}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================================
            BARRES DE PROGRESSION PAR COMPÉTENCE

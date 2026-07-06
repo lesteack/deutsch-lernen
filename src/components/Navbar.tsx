@@ -53,6 +53,7 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-2">
             <NavLink href="/">Dashboard</NavLink>
             <NavLink href="/lecons">Leçons</NavLink>
+            <NavLink href="/programme">Programme</NavLink>
             <NavLink href="/exercices">Exercices</NavLink>
             <NavLink href="/evaluation">Évaluation</NavLink>
             <NavLink href="/profil">Profil</NavLink>
@@ -109,6 +110,9 @@ function MobileMenu() {
           </MobileNavLink>
           <MobileNavLink href="/lecons" pathname={pathname} onClick={() => setIsOpen(false)}>
             Leçons
+          </MobileNavLink>
+          <MobileNavLink href="/programme" pathname={pathname} onClick={() => setIsOpen(false)}>
+            Programme
           </MobileNavLink>
           <MobileNavLink href="/exercices" pathname={pathname} onClick={() => setIsOpen(false)}>
             Exercices

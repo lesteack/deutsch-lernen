@@ -108,6 +108,37 @@ export interface TexteSupport {
 /** Type pour le niveau CECRL */
 export type NiveauCECRL = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
+/** Type pour le statut d'un bloc de programme */
+export type BlocStatut = 'non_commence' | 'en_cours' | 'termine';
+
+/** Type pour les compétences d'un bloc */
+export interface BlocCompetences {
+  lecture: string;
+  ecoute: string;
+  ecriture: string;
+  oral: string;
+}
+
+/** Type pour une section d'un bloc de programme */
+export interface BlocSections {
+  grammaire: string[];
+  vocabulaire: string[];
+  competences: BlocCompetences;
+  jalon: string;
+}
+
+/** Type pour un bloc de programme B1→C1 */
+export interface ProgrammeBloc {
+  id: string;
+  numero: 1 | 2 | 3;
+  titre: string;
+  objectif: string;
+  moisDebut: number;
+  moisFin: number;
+  statut: BlocStatut;
+  sections: BlocSections;
+}
+
 /** Type pour une entrée d'historique de score */
 export interface HistoriqueScore {
   critere: CritereEvaluation;
@@ -134,7 +165,125 @@ const STORAGE_KEYS = {
   EVALUATIONS: 'evaluations',
   TEXTES_SUPPORT: 'textesSupport',
   PROGRESSION: 'progression',
+  PROGRAMME: 'programme',
 } as const;
+
+// ============================================================================
+// PROGRAMME B1→C1
+// ============================================================================
+
+/** Bloc 1 - Consolidation B1 → B2 */
+const bloc1: ProgrammeBloc = {
+  id: 'bloc-1',
+  numero: 1,
+  titre: 'Consolidation B1 → B2',
+  objectif: 'Maîtriser les bases grammaticales et élargir le vocabulaire pour atteindre le niveau B2',
+  moisDebut: 1,
+  moisFin: 3,
+  statut: 'non_commence',
+  sections: {
+    grammaire: [
+      'Révision complète des cas (Nominativ/Akkusativ/Dativ/Genitiv) et prépositions associées (Wechselpräpositionen inclus)',
+      'Déclinaison de l\'adjectif (épithète, avec/sans article, comparatif/superlatif)',
+      'Verbes à particule séparable/inséparable, verbes de position (stehen/stellen, liegen/legen...)',
+      'Konjunktiv II (présent et passé) : hypothèses, souhaits, politesse',
+      'Passiv (Vorgangspassiv et Zustandspassiv), passif avec modaux',
+      'Subordonnées : weil/da, obwohl, während, nachdem, bevor, sodass, damit/um...zu',
+      'Relativsätze (pronoms relatifs, avec préposition, was/wo)',
+      'Verbes à régime prépositionnel (warten auf, sich freuen über...) + pronoms adverbiaux (worauf, womit...)',
+      'Infinitiv mit/ohne zu',
+    ],
+    vocabulaire: [
+      'Vie quotidienne, logement, démarches administratives',
+      'Travail et formation (CV, entretien, monde professionnel)',
+      'Santé et corps',
+      'Environnement et société (bases)',
+      'Expressions idiomatiques courantes',
+    ],
+    competences: {
+      lecture: 'Comprendre des textes descriptifs et narratifs sur des sujets familiers',
+      ecoute: 'Comprendre les points principaux d\'une conversation sur des sujets concrets',
+      ecriture: 'Rédiger des textes simples et cohérents sur des sujets familiers',
+      oral: 'Participer à une conversation sur des sujets de la vie quotidienne',
+    },
+    jalon: 'Tenir une conversation fluide sur des sujets concrets et rédiger un texte structuré de 150-200 mots sans erreur de cas majeure.',
+  },
+};
+
+/** Bloc 2 - B2 confirmé → entrée en C1 */
+const bloc2: ProgrammeBloc = {
+  id: 'bloc-2',
+  numero: 2,
+  titre: 'B2 confirmé → entrée en C1',
+  objectif: 'Approfondir la grammaire avancée et aborder des thèmes complexes',
+  moisDebut: 4,
+  moisFin: 6,
+  statut: 'non_commence',
+  sections: {
+    grammaire: [
+      'Konjunktiv I et discours indirect',
+      'Nominalisation des verbes (Nominalstil)',
+      'Partizip I / Partizip II comme adjectifs et constructions participiales étendues',
+      'Funktionsverbgefüge (zur Verfügung stellen, in Anspruch nehmen...)',
+      'Connecteurs logiques avancés : dennoch, folglich, allerdings, dementsprechend',
+      'Doppelte Konjunktionen (sowohl...als auch, weder...noch, je...desto)',
+      'Génitif élargi et prépositions avec génitif (aufgrund, trotz, während, innerhalb)',
+      'Rection verbale approfondie',
+    ],
+    vocabulaire: [
+      'Économie, politique, actualité',
+      'Culture, médias, réseaux sociaux',
+      'Éducation et système scolaire germanophone',
+      'Débats de société (numérique, écologie, migration)',
+      'Expressions figurées et registre soutenu',
+    ],
+    competences: {
+      lecture: 'Lire des articles de presse et comprendre les nuances',
+      ecoute: 'Comprendre des discours et débats sur des sujets d\'actualité',
+      ecriture: 'Rédiger des textes argumentatifs structurés',
+      oral: 'Exprimer son opinion de manière nuancée sur des sujets variés',
+    },
+    jalon: 'Comprendre un journal télévisé sans sous-titres, rédiger une Erörterung de 300 mots, reformuler au style indirect.',
+  },
+};
+
+/** Bloc 3 - Vers le C1 maîtrisé */
+const bloc3: ProgrammeBloc = {
+  id: 'bloc-3',
+  numero: 3,
+  titre: 'Vers le C1 maîtrisé',
+  objectif: 'Atteindre un niveau autonome et précis dans l\'expression',
+  moisDebut: 7,
+  moisFin: 9,
+  statut: 'non_commence',
+  sections: {
+    grammaire: [
+      'Particules modales et nuances (ja, doch, halt, eben, ruhig, schon, mal)',
+      'Style nominal et verbal avancé, variation stylistique',
+      'Constructions complexes enchâssées',
+      'Konjunktiv dans la nuance rhétorique',
+      'Verbes et locutions idiomatiques par registre',
+      'Cohésion textuelle avancée',
+    ],
+    vocabulaire: [
+      'Sciences, technologie, philosophie',
+      'Littérature et analyse de texte',
+      'Langue professionnelle/académique',
+      'Nuances culturelles germanophones, humour, ironie',
+      'Idiomatique avancée et proverbes',
+    ],
+    competences: {
+      lecture: 'Analyser des textes littéraires et techniques complexes',
+      ecoute: 'Comprendre des conférences et discussions spécialisées',
+      ecriture: 'Rédiger des textes élaboés avec un style adapté',
+      oral: 'S\'exprimer avec spontanéité et précision sur des sujets abstraits',
+    },
+    jalon: 'Niveau C1 opérationnel — comprendre du contenu authentique non adapté, s\'exprimer avec spontanéité et précision sur des sujets abstraits.',
+  },
+};
+
+/** Programme B1→C1 complet */
+export const programmeB1C1: ProgrammeBloc[] = [bloc1, bloc2, bloc3];
 
 // ============================================================================
 // FONCTIONS UTILITAIRES
@@ -822,6 +971,64 @@ export function updateNiveauCECRL(niveau: NiveauCECRL, justification: string): S
   };
   setProgression(updated);
   return updated;
+}
+
+// ============================================================================
+// PROGRAMME
+// ============================================================================
+
+/** Récupère le programme B1→C1 (toujours le même, non stocké en localStorage) */
+export function getProgramme(): ProgrammeBloc[] {
+  return programmeB1C1;
+}
+
+/** Récupère un bloc par son ID */
+export function getBlocById(id: string): ProgrammeBloc | null {
+  return programmeB1C1.find(b => b.id === id) || null;
+}
+
+/** Récupère un bloc par son numéro */
+export function getBlocByNumero(numero: 1 | 2 | 3): ProgrammeBloc | null {
+  return programmeB1C1.find(b => b.numero === numero) || null;
+}
+
+/** Calcule la progression globale en pourcentage (0-100) basée sur le niveau CECRL */
+export function calculerProgressionGlobale(niveau: NiveauCECRL): number {
+  const progressionMap: Record<NiveauCECRL, number> = {
+    A1: 0,
+    A2: 0,
+    B1: 10,
+    B2: 50,
+    C1: 100,
+    C2: 100,
+  };
+  return progressionMap[niveau] || 0;
+}
+
+/** Détermine quel bloc est en cours basé sur le niveau CECRL */
+export function determineBlocEnCours(niveau: NiveauCECRL): ProgrammeBloc | null {
+  const progressionMap: Record<NiveauCECRL, number> = {
+    A1: 0,
+    A2: 0,
+    B1: 1,
+    B2: 2,
+    C1: 3,
+    C2: 3,
+  };
+  
+  const blocNum = progressionMap[niveau];
+  if (blocNum === 0) return null;
+  
+  return programmeB1C1.find(b => b.numero === blocNum) || null;
+}
+
+/** Met à jour le statut d'un bloc */
+export function updateBlocStatut(id: string, statut: BlocStatut): ProgrammeBloc[] {
+  // Note: comme le programme est statique, on retourne une nouvelle copie avec le statut mis à jour
+  // En pratique, le statut sera géré en mémoire ou dans un state global
+  return programmeB1C1.map(bloc => 
+    bloc.id === id ? { ...bloc, statut } : bloc
+  );
 }
 
 // ============================================================================
