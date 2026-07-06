@@ -130,12 +130,120 @@ type GeneratedExercise =
   | DialogueCompletionExercise
   | AssociationExercise
   | DictationExercise
-  | ProductionExercise;
+  | ProductionExercise
+  | GenreExercise
+  | GenreTextExercise
+  | CasGrammaticalExercise;
+
+// ==========================================================================
+// NOUVEAUX TYPES POUR LES EXERCICES DE GENRE (der/die/das)
+// ==========================================================================
+
+/** Type pour un mot avec son article (exercice de genre - Mode A) */
+interface GenreWord {
+  nom: string;
+  article: 'der' | 'die' | 'das' | 'die (pluriel)';
+  traduction: string;
+  astuce: string;
+}
+
+/** Type pour l'exercice de genre - Mode A (choix du déterminant) */
+interface GenreExercise {
+  type: 'genre';
+  mots: GenreWord[];
+}
+
+/** Type pour un trou dans le texte à trous avec déterminants */
+interface GenreTextGap {
+  position: number;
+  bonneReponse: 'Der' | 'Die' | 'Das' | 'Die';
+  options: ('Der' | 'Die' | 'Das' | 'Die')[];
+}
+
+/** Type pour une phrase avec trous (exercice de genre - Mode B) */
+interface GenreTextPhrase {
+  texte: string;
+  trous: GenreTextGap[];
+}
+
+/** Type pour l'exercice de genre - Mode B (texte à trous avec déterminants) */
+interface GenreTextExercise {
+  type: 'genre_texte';
+  phrases: GenreTextPhrase[];
+}
+
+// ==========================================================================
+// NOUVEAUX TYPES POUR LES EXERCICES DE CAS GRAMMATICAUX
+// ==========================================================================
+
+/** Type pour les cas grammaticaux */
+type GrammaticalCase = 'Nominatif' | 'Accusatif' | 'Datif' | 'Génitif';
+
+/** Type pour les fonctions grammaticales */
+type GrammaticalFunction = 'Sujet' | 'COD' | 'COI' | 'Complément du nom';
+
+/** Type pour une question d'identification de fonction (sous-exercice A) */
+interface IdentifyFunctionQuestion {
+  phrase: string;
+  motEnEvidence: string;
+  bonneReponse: GrammaticalFunction;
+  cas: GrammaticalCase;
+  explication: string;
+  choix: GrammaticalFunction[];
+}
+
+/** Type pour l'exercice d'identification de fonction */
+interface IdentifyFunctionExercise {
+  type: 'identifier_fonction';
+  questions: IdentifyFunctionQuestion[];
+}
+
+/** Type pour une question de choix de déterminant (sous-exercice B) */
+interface ChooseDeterminantQuestion {
+  phrase: string;
+  fonction: string;
+  genre: 'masculin' | 'féminin' | 'neutre' | 'pluriel';
+  bonneReponse: string;
+  choix: string[];
+  explication: string;
+}
+
+/** Type pour l'exercice de choix de déterminant */
+interface ChooseDeterminantExercise {
+  type: 'choisir_determinant';
+  questions: ChooseDeterminantQuestion[];
+}
+
+/** Type pour une cellule de déclinaison */
+interface DeclensionCell {
+  value: string;
+  isVisible: boolean;
+  isCorrect?: boolean;
+  userAnswer?: string;
+}
+
+/** Type pour une ligne de déclinaison */
+interface DeclensionRow {
+  genre: 'Masculin' | 'Féminin' | 'Neutre' | 'Pluriel';
+  nominatif: DeclensionCell;
+  accusatif: DeclensionCell;
+  datif: DeclensionCell;
+  genitif: DeclensionCell;
+}
+
+/** Type pour l'exercice de tableau de déclinaison */
+interface DeclensionTableExercise {
+  type: 'tableau_declinaison';
+  rows: DeclensionRow[];
+}
+
+/** Type union pour les exercices de cas grammaticaux */
+type CasGrammaticalExercise = IdentifyFunctionExercise | ChooseDeterminantExercise | DeclensionTableExercise;
 
 /** Type pour la réponse de Mistral (génération) */
 interface MistralExerciseResponse {
   questions?: QCMPQuestion[]; // Pour QCM (20 questions)
-  exercise?: GeneratedTextExercise | TranslationExercise | OpenQuestionExercise | ReorderExercise | ConjugationExercise | DialogueCompletionExercise | AssociationExercise | DictationExercise;
+  exercise?: GeneratedTextExercise | TranslationExercise | OpenQuestionExercise | ReorderExercise | ConjugationExercise | DialogueCompletionExercise | AssociationExercise | DictationExercise | GenreExercise | GenreTextExercise | CasGrammaticalExercise;
 }
 
 /** Type pour une réponse utilisateur à une question QCM */
@@ -320,6 +428,40 @@ export default function ExercicesPage() {
   const [dictationCorrection, setDictationCorrection] = useState<DictationCorrection | null>(null);
   const [isPlayingDictation, setIsPlayingDictation] = useState(false);
   
+  // ==========================================================================
+  // NOUVEAUX ÉTATS POUR LES EXERCICES DE GENRE
+  // ==========================================================================
+  
+  // Pour genre (choix du déterminant)
+  const [genreAnswers, setGenreAnswers] = useState<Record<number, string | undefined>>({});
+  const [genreScore, setGenreScore] = useState<number>(0);
+  
+  // Pour genre_texte (texte à trous avec déterminants)
+  const [genreTextAnswers, setGenreTextAnswers] = useState<Record<number, Record<number, string>>>({});
+  const [genreTextScore, setGenreTextScore] = useState<number>(0);
+  
+  // ==========================================================================
+  // NOUVEAUX ÉTATS POUR LES EXERCICES DE CAS GRAMMATICAUX
+  // ==========================================================================
+  
+  // Pour identifier_fonction
+  const [functionIdentificationAnswers, setFunctionIdentificationAnswers] = useState<Record<number, GrammaticalFunction | undefined>>({});
+  const [functionIdentificationScore, setFunctionIdentificationScore] = useState<number>(0);
+  
+  // Pour choisir_determinant
+  const [determinantChoiceAnswers, setDeterminantChoiceAnswers] = useState<Record<number, string | undefined>>({});
+  const [determinantChoiceScore, setDeterminantChoiceScore] = useState<number>(0);
+  
+  // Pour tableau_declinaison
+  const [declensionTableAnswers, setDeclensionTableAnswers] = useState<Record<string, Record<string, string>>>({});
+  const [declensionTableScore, setDeclensionTableScore] = useState<number>(0);
+  
+  // ==========================================================================
+  // ÉTAT POUR LE PANNEAU AIDE-MÉMOIRE
+  // ==========================================================================
+  
+  const [showHelpPanel, setShowHelpPanel] = useState(false);
+  
   const [correction, setCorrection] = useState<ExerciseCorrection | null>(null);
   
   // État UI
@@ -360,6 +502,11 @@ export default function ExercicesPage() {
       case 'association': return 'Association';
       case 'dictee': return 'Dictée';
       case 'production': return 'Production écrite';
+      case 'genre': return 'Genre des noms (der/die/das)';
+      case 'genre_texte': return 'Genre - Texte à trous';
+      case 'identifier_fonction': return 'Cas grammaticaux - Identifier fonction';
+      case 'choisir_determinant': return 'Cas grammaticaux - Choisir déterminant';
+      case 'tableau_declinaison': return 'Cas grammaticaux - Tableau de déclinaison';
       default: return type;
     }
   }, []);
@@ -395,6 +542,49 @@ export default function ExercicesPage() {
         return !dictationAnswer.trim() || isLoading;
       case 'production':
         return !textAnswer.trim() || isLoading;
+      
+      // ==========================================================================
+      // NOUVEAUX EXERCICES : GENRE
+      // ==========================================================================
+      
+      case 'genre':
+        return Object.keys(genreAnswers).length < generatedExercise.mots.length || isLoading;
+      
+      case 'genre_texte':
+        // Vérifier que toutes les réponses pour toutes les phrases sont fournies
+        let allFilled = true;
+        generatedExercise.phrases.forEach((phrase: any, phraseIndex: number) => {
+          phrase.trous.forEach((trou: any, trouIndex: number) => {
+            if (!genreTextAnswers[phraseIndex]?.[trouIndex]) {
+              allFilled = false;
+            }
+          });
+        });
+        return !allFilled || isLoading;
+      
+      // ==========================================================================
+      // NOUVEAUX EXERCICES : CAS GRAMMATICAUX
+      // ==========================================================================
+      
+      case 'identifier_fonction':
+        return Object.keys(functionIdentificationAnswers).length < generatedExercise.questions.length || isLoading;
+      
+      case 'choisir_determinant':
+        return Object.keys(determinantChoiceAnswers).length < generatedExercise.questions.length || isLoading;
+      
+      case 'tableau_declinaison':
+        // Vérifier que toutes les cellules cachées sont remplies
+        let allDeclensionFilled = true;
+        generatedExercise.rows.forEach((row: any) => {
+          ['nominatif', 'accusatif', 'datif', 'genitif'].forEach((cas: string) => {
+            const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+            if (!cell.isVisible && !declensionTableAnswers[row.genre]?.[cas]) {
+              allDeclensionFilled = false;
+            }
+          });
+        });
+        return !allDeclensionFilled || isLoading;
+      
       default:
         return isLoading;
     }
@@ -409,6 +599,21 @@ export default function ExercicesPage() {
     switch (generatedExercise.type) {
       case 'qcm': return generatedExercise.questions.length;
       case 'production': return 1;
+      case 'genre': return generatedExercise.mots.length;
+      case 'genre_texte': 
+        return generatedExercise.phrases.reduce((count: number, phrase: any) => 
+          count + phrase.trous.length, 0);
+      case 'identifier_fonction': return generatedExercise.questions.length;
+      case 'choisir_determinant': return generatedExercise.questions.length;
+      case 'tableau_declinaison': 
+        return generatedExercise.rows.reduce((count: number, row: any) => {
+          let rowCount = 0;
+          ['nominatif', 'accusatif', 'datif', 'genitif'].forEach((cas: string) => {
+            const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+            if (!cell.isVisible) rowCount++;
+          });
+          return count + rowCount;
+        }, 0);
       default: return 1;
     }
   }, [generatedExercise]);
@@ -673,6 +878,166 @@ Réponds avec UN SEUL objet JSON contenant :
 
 IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
     }
+
+    // ==========================================================================
+    // NOUVEAUX EXERCICES : GENRE DES NOMS (der/die/das)
+    // ==========================================================================
+
+    if (type === 'genre') {
+      return `${basePrompt}
+Crée un exercice de genre des noms (der/die/das) basé sur le contenu ci-dessus.
+- Génère EXACTEMENT 10 noms allemands tirés du vocabulaire du contenu
+- Pour chaque nom, fournit son article défini correct (der, die, das) ou "die (pluriel)" pour les pluriels
+- Ajoute une traduction en français
+- Ajoute une astuce mnémotechnique utile en français
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercice": "genre",
+  "mots": [
+    {
+      "nom": "Tisch",
+      "article": "der",
+      "traduction": "la table",
+      "astuce": "Les meubles sont souvent masculins"
+    },
+    ... (9 autres noms)
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 10 mots.`;
+    }
+
+    if (type === 'genre_texte') {
+      return `${basePrompt}
+Crée un exercice de genre avec texte à trous (determinants) basé sur le contenu ci-dessus.
+- Génère un court texte de 5-6 phrases en allemand
+- Remplace les articles définis par des trous (___)
+- Chaque trou doit être remplacé par Der, Die, Das ou Die (pluriel)
+- Fournis les options possibles pour chaque trou
+- Niveau adapté : ${niveauCECRL}
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "exercice": "genre_texte",
+  "phrases": [
+    {
+      "texte": "___ Hund ist groß. ___ Katze ist klein.",
+      "trous": [
+        {"position": 0, "bonneReponse": "Der", "options": ["Der", "Die", "Das"]},
+        {"position": 1, "bonneReponse": "Die", "options": ["Der", "Die", "Das"]}
+      ]
+    }
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    // ==========================================================================
+    // NOUVEAUX EXERCICES : CAS GRAMMATICAUX
+    // ==========================================================================
+
+    if (type === 'identifier_fonction') {
+      return `${basePrompt}
+Crée un exercice pour identifier la fonction grammaticale des mots en allemand.
+- Génère 5-8 questions
+- Chaque question doit contenir une phrase en allemand avec un mot en évidence (entouré de **)
+- L'utilisateur doit identifier la fonction du mot : Sujet, COD, COI, Complément du nom
+- Indique aussi le cas grammatical correspondant (Nominatif, Accusatif, Datif, Génitif)
+- Fournis une explication pédagogique en français
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "type": "identifier_fonction",
+  "questions": [
+    {
+      "phrase": "Ich gebe **dem Mann** ein Buch.",
+      "motEnEvidence": "dem Mann",
+      "bonneReponse": "COI",
+      "cas": "Datif",
+      "explication": "'dem Mann' est le destinataire de l'action → COI → Datif",
+      "choix": ["Sujet", "COD", "COI", "Complément du nom"]
+    },
+    ... (4-7 autres questions)
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'choisir_determinant') {
+      return `${basePrompt}
+Crée un exercice pour choisir le bon déterminant selon la fonction grammaticale.
+- Génère 5-8 questions
+- Chaque question contient une phrase avec un trou pour un article/déterminant
+- Indique la fonction du mot manquant (ex: "COD (Accusatif)") et son genre
+- Fournis 4 options de réponse (ex: der, den, dem, des)
+- L'utilisateur doit choisir la bonne déclinaison
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "type": "choisir_determinant",
+  "questions": [
+    {
+      "phrase": "Ich sehe ___ Mann.",
+      "fonction": "COD (Accusatif)",
+      "genre": "masculin",
+      "bonneReponse": "den",
+      "choix": ["der", "den", "dem", "des"],
+      "explication": "COD masculin → Accusatif → 'den'"
+    },
+    ... (4-7 autres questions)
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
+
+    if (type === 'tableau_declinaison') {
+      return `${basePrompt}
+Crée un exercice de tableau de déclinaison interactif.
+- Génère un tableau complet des articles définis déclinés selon les 4 cas grammaticaux
+- Masque aléatoirement certaines cellules (environ 50% des cellules)
+- L'utilisateur doit compléter les cellules manquantes
+
+Réponds avec UN SEUL objet JSON contenant :
+{
+  "type": "tableau_declinaison",
+  "rows": [
+    {
+      "genre": "Masculin",
+      "nominatif": {"value": "der", "isVisible": true},
+      "accusatif": {"value": "den", "isVisible": false},
+      "datif": {"value": "dem", "isVisible": true},
+      "genitif": {"value": "des", "isVisible": false}
+    },
+    {
+      "genre": "Féminin",
+      "nominatif": {"value": "die", "isVisible": false},
+      "accusatif": {"value": "die", "isVisible": true},
+      "datif": {"value": "der", "isVisible": false},
+      "genitif": {"value": "der", "isVisible": true}
+    },
+    {
+      "genre": "Neutre",
+      "nominatif": {"value": "das", "isVisible": true},
+      "accusatif": {"value": "das", "isVisible": false},
+      "datif": {"value": "dem", "isVisible": true},
+      "genitif": {"value": "des", "isVisible": false}
+    },
+    {
+      "genre": "Pluriel",
+      "nominatif": {"value": "die", "isVisible": false},
+      "accusatif": {"value": "die", "isVisible": true},
+      "datif": {"value": "den", "isVisible": false},
+      "genitif": {"value": "der", "isVisible": true}
+    }
+  ]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+    }
     
     // Pour les autres types
     return `${basePrompt}
@@ -856,6 +1221,113 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
               correctAnswer: [],
               explanation: String(exerciseData.explanation || ''),
             } as any;
+            break;
+
+          // ==========================================================================
+          // NOUVEAUX EXERCICES : GENRE DES NOMS
+          // ==========================================================================
+
+          case 'genre':
+            if (!exerciseData.mots || !Array.isArray(exerciseData.mots) || exerciseData.mots.length !== 10) {
+              throw new Error(`Réponse Mistral invalide : attendu 10 mots pour genre, reçu ${exerciseData.mots?.length || 0}`);
+            }
+            
+            exercise = {
+              type: 'genre',
+              mots: exerciseData.mots.map((m: any) => ({
+                nom: String(m.nom || ''),
+                article: String(m.article || ''),
+                traduction: String(m.traduction || ''),
+                astuce: String(m.astuce || ''),
+              })),
+            };
+            break;
+
+          case 'genre_texte':
+            if (!exerciseData.phrases || !Array.isArray(exerciseData.phrases)) {
+              throw new Error('Réponse Mistral invalide : phrases manquantes pour genre_texte');
+            }
+            
+            exercise = {
+              type: 'genre_texte',
+              phrases: exerciseData.phrases.map((p: any) => ({
+                texte: String(p.texte || ''),
+                trous: Array.isArray(p.trous) ? p.trous.map((t: any) => ({
+                  position: Number(t.position || 0),
+                  bonneReponse: String(t.bonneReponse || ''),
+                  options: Array.isArray(t.options) ? t.options.map(String) : ['Der', 'Die', 'Das', 'Die'],
+                })) : [],
+              })),
+            };
+            break;
+
+          // ==========================================================================
+          // NOUVEAUX EXERCICES : CAS GRAMMATICAUX
+          // ==========================================================================
+
+          case 'identifier_fonction':
+            if (!exerciseData.questions || !Array.isArray(exerciseData.questions)) {
+              throw new Error('Réponse Mistral invalide : questions manquantes pour identifier_fonction');
+            }
+            
+            exercise = {
+              type: 'identifier_fonction',
+              questions: exerciseData.questions.map((q: any) => ({
+                phrase: String(q.phrase || ''),
+                motEnEvidence: String(q.motEnEvidence || ''),
+                bonneReponse: String(q.bonneReponse || ''),
+                cas: String(q.cas || ''),
+                explication: String(q.explication || ''),
+                choix: Array.isArray(q.choix) ? q.choix.map(String) : ['Sujet', 'COD', 'COI', 'Complément du nom'],
+              })),
+            };
+            break;
+
+          case 'choisir_determinant':
+            if (!exerciseData.questions || !Array.isArray(exerciseData.questions)) {
+              throw new Error('Réponse Mistral invalide : questions manquantes pour choisir_determinant');
+            }
+            
+            exercise = {
+              type: 'choisir_determinant',
+              questions: exerciseData.questions.map((q: any) => ({
+                phrase: String(q.phrase || ''),
+                fonction: String(q.fonction || ''),
+                genre: String(q.genre || ''),
+                bonneReponse: String(q.bonneReponse || ''),
+                choix: Array.isArray(q.choix) ? q.choix.map(String) : ['der', 'den', 'dem', 'des'],
+                explication: String(q.explication || ''),
+              })),
+            };
+            break;
+
+          case 'tableau_declinaison':
+            if (!exerciseData.rows || !Array.isArray(exerciseData.rows)) {
+              throw new Error('Réponse Mistral invalide : rows manquantes pour tableau_declinaison');
+            }
+            
+            exercise = {
+              type: 'tableau_declinaison',
+              rows: exerciseData.rows.map((r: any) => ({
+                genre: String(r.genre || ''),
+                nominatif: {
+                  value: String(r.nominatif?.value || ''),
+                  isVisible: Boolean(r.nominatif?.isVisible || true),
+                },
+                accusatif: {
+                  value: String(r.accusatif?.value || ''),
+                  isVisible: Boolean(r.accusatif?.isVisible || true),
+                },
+                datif: {
+                  value: String(r.datif?.value || ''),
+                  isVisible: Boolean(r.datif?.isVisible || true),
+                },
+                genitif: {
+                  value: String(r.genitif?.value || ''),
+                  isVisible: Boolean(r.genitif?.isVisible || true),
+                },
+              })),
+            };
             break;
 
           default:
@@ -1709,12 +2181,197 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
   ]);
 
   // ==========================================================================
+  // TABLEAU RÉCAPITULATIF DES RÈGLES (AIDE-MÉMOIRE)
+  // ==========================================================================
+
+  /**
+   * Contenu du panneau aide-mémoire pour les déclinaisons et cas grammaticaux
+   */
+  const GrammarHelpPanel = () => (
+    <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-[#1e1b4b]">📋 Aide-mémoire - Déclinaisons Allemandes</h2>
+        <button
+          onClick={() => setShowHelpPanel(false)}
+          className="text-gray-400 hover:text-gray-600 text-2xl"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Tableau complet des déclinaisons */}
+      <div className="mb-8">
+        <h3 className="text-lg font-semibold text-[#1e1b4b] mb-4">📚 Tableau des articles définis (der/die/das)</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse border border-gray-300 text-sm">
+            <thead>
+              <tr className="bg-[#3730a3] text-white">
+                <th className="p-2 border border-gray-300">Cas / Genre</th>
+                <th className="p-2 border border-gray-300">Masculin</th>
+                <th className="p-2 border border-gray-300">Féminin</th>
+                <th className="p-2 border border-gray-300">Neutre</th>
+                <th className="p-2 border border-gray-300">Pluriel</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-gray-50">
+                <td className="p-2 border border-gray-300 font-medium">Nominatif</td>
+                <td className="p-2 border border-gray-300 text-center">der</td>
+                <td className="p-2 border border-gray-300 text-center">die</td>
+                <td className="p-2 border border-gray-300 text-center">das</td>
+                <td className="p-2 border border-gray-300 text-center">die</td>
+              </tr>
+              <tr className="bg-white">
+                <td className="p-2 border border-gray-300 font-medium">Accusatif</td>
+                <td className="p-2 border border-gray-300 text-center">den</td>
+                <td className="p-2 border border-gray-300 text-center">die</td>
+                <td className="p-2 border border-gray-300 text-center">das</td>
+                <td className="p-2 border border-gray-300 text-center">die</td>
+              </tr>
+              <tr className="bg-gray-50">
+                <td className="p-2 border border-gray-300 font-medium">Datif</td>
+                <td className="p-2 border border-gray-300 text-center">dem</td>
+                <td className="p-2 border border-gray-300 text-center">der</td>
+                <td className="p-2 border border-gray-300 text-center">dem</td>
+                <td className="p-2 border border-gray-300 text-center">den</td>
+              </tr>
+              <tr className="bg-white">
+                <td className="p-2 border border-gray-300 font-medium">Génitif</td>
+                <td className="p-2 border border-gray-300 text-center">des</td>
+                <td className="p-2 border border-gray-300 text-center">der</td>
+                <td className="p-2 border border-gray-300 text-center">des</td>
+                <td className="p-2 border border-gray-300 text-center">der</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Tableau des pronoms personnels */}
+      <div className="mb-8">
+        <h3 className="text-lg font-semibold text-[#1e1b4b] mb-4">👥 Pronoms personnels par cas</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse border border-gray-300 text-sm">
+            <thead>
+              <tr className="bg-[#3730a3] text-white">
+                <th className="p-2 border border-gray-300">Cas / Personne</th>
+                <th className="p-2 border border-gray-300">ich</th>
+                <th className="p-2 border border-gray-300">du</th>
+                <th className="p-2 border border-gray-300">er</th>
+                <th className="p-2 border border-gray-300">sie</th>
+                <th className="p-2 border border-gray-300">es</th>
+                <th className="p-2 border border-gray-300">wir</th>
+                <th className="p-2 border border-gray-300">ihr</th>
+                <th className="p-2 border border-gray-300">sie/Sie</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-gray-50">
+                <td className="p-2 border border-gray-300 font-medium">Nominatif</td>
+                <td className="p-2 border border-gray-300 text-center">ich</td>
+                <td className="p-2 border border-gray-300 text-center">du</td>
+                <td className="p-2 border border-gray-300 text-center">er</td>
+                <td className="p-2 border border-gray-300 text-center">sie</td>
+                <td className="p-2 border border-gray-300 text-center">es</td>
+                <td className="p-2 border border-gray-300 text-center">wir</td>
+                <td className="p-2 border border-gray-300 text-center">ihr</td>
+                <td className="p-2 border border-gray-300 text-center">sie/Sie</td>
+              </tr>
+              <tr className="bg-white">
+                <td className="p-2 border border-gray-300 font-medium">Accusatif</td>
+                <td className="p-2 border border-gray-300 text-center">mich</td>
+                <td className="p-2 border border-gray-300 text-center">dich</td>
+                <td className="p-2 border border-gray-300 text-center">ihn</td>
+                <td className="p-2 border border-gray-300 text-center">sie</td>
+                <td className="p-2 border border-gray-300 text-center">es</td>
+                <td className="p-2 border border-gray-300 text-center">uns</td>
+                <td className="p-2 border border-gray-300 text-center">euch</td>
+                <td className="p-2 border border-gray-300 text-center">sie/Sie</td>
+              </tr>
+              <tr className="bg-gray-50">
+                <td className="p-2 border border-gray-300 font-medium">Datif</td>
+                <td className="p-2 border border-gray-300 text-center">mir</td>
+                <td className="p-2 border border-gray-300 text-center">dir</td>
+                <td className="p-2 border border-gray-300 text-center">ihm</td>
+                <td className="p-2 border border-gray-300 text-center">ihr</td>
+                <td className="p-2 border border-gray-300 text-center">ihm</td>
+                <td className="p-2 border border-gray-300 text-center">uns</td>
+                <td className="p-2 border border-gray-300 text-center">euch</td>
+                <td className="p-2 border border-gray-300 text-center">ihnen/Ihnen</td>
+              </tr>
+              <tr className="bg-white">
+                <td className="p-2 border border-gray-300 font-medium">Génitif</td>
+                <td className="p-2 border border-gray-300 text-center">meiner</td>
+                <td className="p-2 border border-gray-300 text-center">deiner</td>
+                <td className="p-2 border border-gray-300 text-center">seiner</td>
+                <td className="p-2 border border-gray-300 text-center">ihrer</td>
+                <td className="p-2 border border-gray-300 text-center">seiner</td>
+                <td className="p-2 border border-gray-300 text-center">unser</td>
+                <td className="p-2 border border-gray-300 text-center">euer</td>
+                <td className="p-2 border border-gray-300 text-center">ihrer/Ihrer</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Règles pour identifier le cas */}
+      <div className="mb-8">
+        <h3 className="text-lg font-semibold text-[#1e1b4b] mb-4">🔍 Règles pour identifier le cas d'un mot</h3>
+        <div className="space-y-4 text-sm">
+          <div className="bg-blue-50 p-3 rounded-lg">
+            <h4 className="font-medium text-blue-800 mb-2">✅ Nominatif</h4>
+            <p><strong>Sujet</strong> de la phrase : <em>Der Mann</em> <strong>läuft</strong>.</p>
+            <p><strong>Après :</strong> sein, das ist, werden, etc.</p>
+          </div>
+          <div className="bg-green-50 p-3 rounded-lg">
+            <h4 className="font-medium text-green-800 mb-2">✅ Accusatif</h4>
+            <p><strong>COD (Complément d'Objet Direct)</strong> : Ich sehe <em>den Mann</em>.</p>
+            <p><strong>Après les prépositions :</strong> durch, für, gegen, ohne, um, bis</p>
+          </div>
+          <div className="bg-orange-50 p-3 rounded-lg">
+            <h4 className="font-medium text-orange-800 mb-2">✅ Datif</h4>
+            <p><strong>COI (Complément d'Objet Indirect)</strong> : Ich gebe <em>dem Mann</em> ein Buch.</p>
+            <p><strong>Après les prépositions :</strong> aus, bei, mit, nach, von, zu, seit, außer, gegenüber</p>
+          </div>
+          <div className="bg-red-50 p-3 rounded-lg">
+            <h4 className="font-medium text-red-800 mb-2">✅ Génitif</h4>
+            <p><strong>Complément du nom</strong> : Das ist die Farbe <em>des Himmels</em>.</p>
+            <p><strong>Après les prépositions :</strong> während, wegen, trotz, außerhalb, innerhalb</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Exemples de phrases */}
+      <div>
+        <h3 className="text-lg font-semibold text-[#1e1b4b] mb-4">📝 Exemples de phrases par cas</h3>
+        <div className="space-y-3 text-sm">
+          <div className="bg-purple-50 p-3 rounded-lg">
+            <p><strong>Nominatif:</strong> <em>Der Hund</em> bellt. (<em>Le chien</em> aboie - sujet)</p>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg">
+            <p><strong>Accusatif:</strong> Ich habe <em>den Hund</em> gesehen. (J'ai vu <em>le chien</em> - COD)</p>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg">
+            <p><strong>Datif:</strong> Ich gebe <em>dem Hund</em> Futter. (Je donne à <em>donner au chien</em> à manger - COI)</p>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg">
+            <p><strong>Génitif:</strong> Das ist die Leine <em>des Hundes</em>. (C'est la laisse <em>du chien</em> - complément du nom)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ==========================================================================
   // RENDU
   // ==========================================================================
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 relative">
       <div className="max-w-4xl mx-auto">
+        {/* Panneau aide-mémoire */}
+        {showHelpPanel && <GrammarHelpPanel />}
         {/* En-tête avec dégradé */}
         <div className="bg-gradient-to-r from-[#1e1b4b] to-[#3730a3] rounded-xl p-6 mb-8 shadow-lg">
           <h1 className="text-3xl font-bold text-white">Exercices</h1>
@@ -1871,6 +2528,11 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 <option value="association">Association</option>
                 <option value="dictee">Dictée</option>
                 <option value="production">Production écrite</option>
+                <option value="genre">Genre (der/die/das) - Choix</option>
+                <option value="genre_texte">Genre (der/die/das) - Texte à trous</option>
+                <option value="identifier_fonction">Cas grammaticaux - Identifier fonction</option>
+                <option value="choisir_determinant">Cas grammaticaux - Choisir déterminant</option>
+                <option value="tableau_declinaison">Cas grammaticaux - Tableau de déclinaison</option>
               </select>
               {selectedType === 'qcm' && (
                 <p className="text-xs text-gray-500 mt-1">
@@ -1928,6 +2590,19 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 <option value="C2">C2 - Maîtrise</option>
               </select>
             </div>
+
+            {/* Bouton Aide-mémoire (visible pour tous les exercices de grammaire) */}
+            {['genre', 'genre_texte', 'identifier_fonction', 'choisir_determinant', 'tableau_declinaison'].includes(selectedType) && (
+              <div className="mb-4">
+                <button
+                  onClick={() => setShowHelpPanel(true)}
+                  className="w-full px-4 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span>📋</span>
+                  <span>Aide-mémoire des déclinaisons</span>
+                </button>
+              </div>
+            )}
 
             {/* Bouton de génération */}
             {(themeSource === 'cours' && !selectedLecon) ? (
@@ -2364,6 +3039,380 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         {/* ======================================================================
              ÉTAPE 4 : CORRECTION + SAUVEGARDE
            ====================================================================== */}
+        
+        {/* ========================================================================
+             NOUVEAUX EXERCICES : AFFICHAGE DES RÉSULTATS
+           ======================================================================== */}
+        
+        {/* Résultats pour Genre - Mode A */}
+        {step === 'correcting' && generatedExercise?.type === 'genre' && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-[#1e1b4b] mb-2">
+                {genreScore >= 80 ? (
+                  <span className="text-green-600">✓ Excellent travail !</span>
+                ) : genreScore >= 50 ? (
+                  <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                ) : (
+                  <span className="text-red-600">✗ Revisez ces notions</span>
+                )}
+              </h2>
+              <div className="text-5xl font-bold mb-2">
+                <span className={genreScore >= 80 ? 'text-green-600' : genreScore >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                  {genreScore}/100
+                </span>
+              </div>
+              <p className="text-gray-600">
+                Genre des noms - Mode choix du déterminant
+              </p>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setGeneratedExercise(null);
+                  setGenreAnswers({});
+                  setGenreScore(0);
+                }}
+                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+              >
+                Faire un autre exercice
+              </button>
+            </div>
+
+            {/* Détails des réponses */}
+            <div className="bg-gray-50 p-4 rounded-md space-y-3 max-h-[50vh] overflow-y-auto">
+              <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
+              {generatedExercise.mots.map((mot: GenreWord, index: number) => {
+                const userAnswer = genreAnswers[index];
+                const isCorrect = userAnswer === mot.article;
+                
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                  >
+                    <p className="font-medium text-gray-800 mb-1">
+                      {index + 1}. {mot.nom} ({mot.traduction})
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Votre réponse:</span> 
+                      <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
+                        {userAnswer || 'Non répondue'}
+                      </span>
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Réponse correcte:</span> 
+                      <span className="text-green-700 font-medium">{mot.article}</span>
+                    </p>
+                    {!isCorrect && (
+                      <p className="text-xs text-gray-500 mt-1"><strong>Astuce:</strong> {mot.astuce}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Résultats pour Genre - Mode B */}
+        {step === 'correcting' && generatedExercise?.type === 'genre_texte' && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-[#1e1b4b] mb-2">
+                {genreTextScore >= 80 ? (
+                  <span className="text-green-600">✓ Excellent travail !</span>
+                ) : genreTextScore >= 50 ? (
+                  <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                ) : (
+                  <span className="text-red-600">✗ Revisez ces notions</span>
+                )}
+              </h2>
+              <div className="text-5xl font-bold mb-2">
+                <span className={genreTextScore >= 80 ? 'text-green-600' : genreTextScore >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                  {genreTextScore}/100
+                </span>
+              </div>
+              <p className="text-gray-600">
+                Genre des noms - Mode texte à trous
+              </p>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setGeneratedExercise(null);
+                  setGenreTextAnswers({});
+                  setGenreTextScore(0);
+                }}
+                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+              >
+                Faire un autre exercice
+              </button>
+            </div>
+
+            {/* Détails des réponses */}
+            <div className="bg-gray-50 p-4 rounded-md space-y-3 max-h-[50vh] overflow-y-auto">
+              <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
+              {generatedExercise.phrases.map((phrase: GenreTextPhrase, phraseIndex: number) => (
+                <div key={phraseIndex} className="bg-white p-3 rounded-md border border-gray-200">
+                  <p className="font-medium text-gray-800 mb-2">Phrase {phraseIndex + 1}</p>
+                  {phrase.texte.split('___').map((part: string, partIndex: number) => {
+                    if (partIndex === 0) return <span key={partIndex}>{part}</span>;
+                    
+                    const trou = phrase.trous[partIndex - 1];
+                    const userAnswer = genreTextAnswers[phraseIndex]?.[partIndex - 1];
+                    const isCorrect = userAnswer === trou.bonneReponse;
+                    
+                    return (
+                      <span key={partIndex}>
+                        <span className={`px-2 py-1 rounded text-sm ${
+                          isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {userAnswer || '---'}
+                        </span>
+                        {part}
+                      </span>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Résultats pour Cas grammaticaux - Identifier fonction */}
+        {step === 'correcting' && generatedExercise?.type === 'identifier_fonction' && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-[#1e1b4b] mb-2">
+                {functionIdentificationScore >= 80 ? (
+                  <span className="text-green-600">✓ Excellent travail !</span>
+                ) : functionIdentificationScore >= 50 ? (
+                  <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                ) : (
+                  <span className="text-red-600">✗ Revisez ces notions</span>
+                )}
+              </h2>
+              <div className="text-5xl font-bold mb-2">
+                <span className={functionIdentificationScore >= 80 ? 'text-green-600' : functionIdentificationScore >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                  {functionIdentificationScore}/100
+                </span>
+              </div>
+              <p className="text-gray-600">
+                Cas grammaticaux - Identifier fonction
+              </p>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setGeneratedExercise(null);
+                  setFunctionIdentificationAnswers({});
+                  setFunctionIdentificationScore(0);
+                }}
+                className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium"
+              >
+                Faire un autre exercice
+              </button>
+            </div>
+
+            {/* Détails des réponses */}
+            <div className="bg-gray-50 p-4 rounded-md space-y-3 max-h-[50vh] overflow-y-auto">
+              <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
+              {generatedExercise.questions.map((question: IdentifyFunctionQuestion, index: number) => {
+                const userAnswer = functionIdentificationAnswers[index];
+                const isCorrect = userAnswer === question.bonneReponse;
+                const phraseWithHtml = question.phrase.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                  >
+                    <p className="font-medium text-gray-800 mb-2" 
+                       dangerouslySetInnerHTML={{ __html: phraseWithHtml }}>
+                    </p>
+                    <p className="text-sm mb-2">
+                      Mot: <strong>{question.motEnEvidence}</strong>
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Votre réponse:</span> 
+                      <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
+                        {userAnswer || 'Non répondue'}
+                      </span>
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Réponse correcte:</span> 
+                      <span className="text-green-700 font-medium">{question.bonneReponse}</span>
+                      <span className="text-gray-500"> ({question.cas})</span>
+                    </p>
+                    {!isCorrect && (
+                      <p className="text-xs text-gray-500 mt-1"><strong>Explication:</strong> {question.explication}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Résultats pour Cas grammaticaux - Choisir déterminant */}
+        {step === 'correcting' && generatedExercise?.type === 'choisir_determinant' && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-[#1e1b4b] mb-2">
+                {determinantChoiceScore >= 80 ? (
+                  <span className="text-green-600">✓ Excellent travail !</span>
+                ) : determinantChoiceScore >= 50 ? (
+                  <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                ) : (
+                  <span className="text-red-600">✗ Revisez ces notions</span>
+                )}
+              </h2>
+              <div className="text-5xl font-bold mb-2">
+                <span className={determinantChoiceScore >= 80 ? 'text-green-600' : determinantChoiceScore >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                  {determinantChoiceScore}/100
+                </span>
+              </div>
+              <p className="text-gray-600">
+                Cas grammaticaux - Choisir déterminant
+              </p>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setGeneratedExercise(null);
+                  setDeterminantChoiceAnswers({});
+                  setDeterminantChoiceScore(0);
+                }}
+                className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors font-medium"
+              >
+                Faire un autre exercice
+              </button>
+            </div>
+
+            {/* Détails des réponses */}
+            <div className="bg-gray-50 p-4 rounded-md space-y-3 max-h-[50vh] overflow-y-auto">
+              <h3 className="font-medium text-gray-700 mb-3">Détail des réponses</h3>
+              {generatedExercise.questions.map((question: ChooseDeterminantQuestion, index: number) => {
+                const userAnswer = determinantChoiceAnswers[index];
+                const isCorrect = userAnswer === question.bonneReponse;
+                
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-md border-l-4 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+                  >
+                    <p className="font-medium text-gray-800 mb-2">
+                      Question {index + 1}: {question.phrase}
+                    </p>
+                    <p className="text-sm text-gray-600 mb-2">
+                      {question.fonction} | Genre: {question.genre}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Votre réponse:</span> 
+                      <span className={isCorrect ? 'text-green-700' : 'text-red-700'}>
+                        {userAnswer || 'Non répondue'}
+                      </span>
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-600">Réponse correcte:</span> 
+                      <span className="text-green-700 font-medium">{question.bonneReponse}</span>
+                    </p>
+                    {!isCorrect && (
+                      <p className="text-xs text-gray-500 mt-1"><strong>Explication:</strong> {question.explication}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Résultats pour Cas grammaticaux - Tableau de déclinaison */}
+        {step === 'correcting' && generatedExercise?.type === 'tableau_declinaison' && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-[#1e1b4b] mb-2">
+                {declensionTableScore >= 80 ? (
+                  <span className="text-green-600">✓ Excellent travail !</span>
+                ) : declensionTableScore >= 50 ? (
+                  <span className="text-yellow-600">⚠ Bien, mais peut mieux faire</span>
+                ) : (
+                  <span className="text-red-600">✗ Revisez ces notions</span>
+                )}
+              </h2>
+              <div className="text-5xl font-bold mb-2">
+                <span className={declensionTableScore >= 80 ? 'text-green-600' : declensionTableScore >= 50 ? 'text-yellow-600' : 'text-red-600'}>
+                  {declensionTableScore}/100
+                </span>
+              </div>
+              <p className="text-gray-600">
+                Cas grammaticaux - Tableau de déclinaison
+              </p>
+            </div>
+
+            {/* Tableau complet avec corrections */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border border-gray-300 text-sm bg-white">
+                <thead>
+                  <tr className="bg-[#3730a3] text-white">
+                    <th className="p-2 border border-gray-300">Cas / Genre</th>
+                    <th className="p-2 border border-gray-300">Nominatif</th>
+                    <th className="p-2 border border-gray-300">Accusatif</th>
+                    <th className="p-2 border border-gray-300">Datif</th>
+                    <th className="p-2 border border-gray-300">Génitif</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generatedExercise.rows.map((row: DeclensionRow, rowIndex: number) => (
+                    <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}> 
+                      <td className="p-2 border border-gray-300 font-medium">{row.genre}</td>
+                      {['nominatif', 'accusatif', 'datif', 'genitif'].map((cas: string) => {
+                        const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+                        const userAnswer = declensionTableAnswers[row.genre]?.[cas];
+                        const isCorrect = userAnswer === cell.value;
+                        const isAnswered = userAnswer !== undefined && userAnswer !== '';
+                        
+                        return (
+                          <td key={cas} className="p-2 border border-gray-300 text-center">
+                            {cell.isVisible ? (
+                              <span className="font-medium text-gray-700">{cell.value}</span>
+                            ) : (
+                              <div>
+                                <span className={`font-medium ${
+                                  isAnswered 
+                                    ? (isCorrect ? 'text-green-600' : 'text-red-600')
+                                    : 'text-gray-600'
+                                }`}>
+                                  {userAnswer || '?>'}
+                                </span>
+                                {!isCorrect && isAnswered && (
+                                  <div className="text-xs text-red-600">→ {cell.value}</div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {(step === 'correcting' || step === 'saved') && correction && generatedExercise && (
           <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
             {/* Résultat global */}
@@ -2764,6 +3813,600 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================================
+                 NOUVEAUX EXERCICES : GENRE DES NOMS
+               ======================================================================== */}
+
+            {/* GENRE - Mode A : Choix du déterminant */}
+            {generatedExercise.type === 'genre' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Choisissez le bon article (der, die, das, die pluriel) pour chaque nom.
+                  Score final sur {generatedExercise.mots.length}.
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.mots.map((mot: GenreWord, index: number) => {
+                    const userAnswer = genreAnswers[index];
+                    const isCorrect = userAnswer === mot.article;
+                    const isAnswered = userAnswer !== undefined;
+
+                    return (
+                      <div 
+                        key={index}
+                        className={`bg-white p-4 rounded-md shadow-sm border-2 transition-colors ${
+                          isAnswered ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50') : 'border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <span className="text-xl">___</span>
+                          <span className="text-xl font-medium text-gray-800">{mot.nom}</span>
+                        </div>
+
+                        <p className="text-sm text-gray-600 mb-3">Traduction: {mot.traduction}</p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {['der', 'die', 'das', 'die (pluriel)'].map((article: string) => {
+                            const isSelected = userAnswer === article;
+                            return (
+                              <button
+                                key={article}
+                                onClick={() => {
+                                  setGenreAnswers(prev => ({
+                                    ...prev,
+                                    [index]: isSelected ? undefined : article
+                                  }));
+                                }}
+                                disabled={isAnswered && !isSelected}
+                                className={`px-4 py-2 rounded-md text-white font-medium transition-colors ${
+                                  isSelected
+                                    ? (isCorrect ? 'bg-green-600' : 'bg-red-600')
+                                    : 'bg-blue-600 hover:bg-blue-700'
+                                }`}
+                              >
+                                {article}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {isAnswered && !isCorrect && (
+                          <div className="mt-3 bg-red-50 p-2 rounded border border-red-200">
+                            <p className="text-xs text-red-700">
+                              <span className="font-medium">Astuce:</span> {mot.astuce}
+                            </p>
+                          </div>
+                        )}
+
+                        {isAnswered && isCorrect && (
+                          <div className="mt-3 bg-green-50 p-2 rounded border border-green-200">
+                            <p className="text-xs text-green-700">✓ Correct !</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Bouton de correction */}
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      let correctCount = 0;
+                      generatedExercise.mots.forEach((mot: GenreWord, index: number) => {
+                        if (genreAnswers[index] === mot.article) {
+                          correctCount++;
+                        }
+                      });
+                      const score = Math.round((correctCount / generatedExercise.mots.length) * 100);
+                      setGenreScore(score);
+                      
+                      // Sauvegarder l'exercice
+                      const newExercice = addExercice({
+                        type: generatedExercise.type,
+                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        contenuJSON: {
+                          mots: generatedExercise.mots,
+                          answers: genreAnswers
+                        },
+                        reponseUtilisateur: genreAnswers,
+                        correction: `Score: ${score}/100. ${correctCount} bonnes réponses sur ${generatedExercise.mots.length}.`,
+                        score: score,
+                      });
+                      
+                      setStep('correcting');
+                    }}
+                    disabled={Object.keys(genreAnswers).length < generatedExercise.mots.length || isLoading}
+                    className={`px-6 py-3 rounded-md text-white font-medium transition-colors ${
+                      Object.keys(genreAnswers).length >= generatedExercise.mots.length
+                        ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer w-full'
+                        : 'bg-blue-300 cursor-not-allowed w-full'
+                    }`}
+                  >
+                    {isLoading ? 'Correction en cours...' : `Corriger (${Object.keys(genreAnswers).length}/${generatedExercise.mots.length})`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* GENRE - Mode B : Texte à trous avec déterminants */}
+            {generatedExercise.type === 'genre_texte' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Complétez les trous avec le bon article (Der, Die, Das, Die).
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.phrases.map((phrase: GenreTextPhrase, phraseIndex: number) => (
+                    <div key={phraseIndex} className="bg-white p-4 rounded-md shadow-sm">
+                      <p className="mb-3 font-medium text-gray-800">Phrase {phraseIndex + 1}</p>
+                      
+                      {/* Affichage du texte avec trous */}
+                      <div className="mb-4">
+                        {phrase.texte.split('___').map((part: string, partIndex: number) => {
+                          const trou = phrase.trous[partIndex];
+                          const userAnswer = genreTextAnswers[phraseIndex]?.[partIndex];
+                          
+                          if (partIndex === 0) {
+                            return <span key={partIndex}>{part}</span>;
+                          }
+                          
+                          // Trou
+                          const isCorrect = userAnswer === trou?.bonneReponse;
+                          const isAnswered = userAnswer !== undefined;
+                          
+                          return (
+                            <span key={partIndex}>
+                              <select
+                                value={userAnswer || ''}
+                                onChange={(e) => {
+                                  const answer = e.target.value;
+                                  setGenreTextAnswers(prev => ({
+                                    ...prev,
+                                    [phraseIndex]: {
+                                      ...prev[phraseIndex],
+                                      [partIndex - 1]: answer
+                                    }
+                                  }));
+                                }}
+                                className={`px-2 py-1 rounded border text-sm ${
+                                  isAnswered 
+                                    ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50')
+                                    : 'border-gray-300 bg-white'
+                                }`}
+                              >
+                                <option value="">---</option>
+                                {trou?.options.map((option: string) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                              {part}
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {phrase.trous.map((trou: GenreTextGap, trouIndex: number) => {
+                        const userAnswer = genreTextAnswers[phraseIndex]?.[trouIndex];
+                        const isCorrect = userAnswer === trou.bonneReponse;
+                        const isAnswered = userAnswer !== undefined;
+                        
+                        return isAnswered && !isCorrect ? (
+                          <div key={trouIndex} className="bg-red-50 p-2 rounded border border-red-200 mt-2">
+                            <p className="text-xs text-red-700">
+                              La bonne réponse était: <strong>{trou.bonneReponse}</strong>
+                            </p>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bouton de correction */}
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      let correctCount = 0;
+                      let totalQuestions = 0;
+                      
+                      generatedExercise.phrases.forEach((phrase: GenreTextPhrase, phraseIndex: number) => {
+                        phrase.trous.forEach((trou: GenreTextGap, trouIndex: number) => {
+                          totalQuestions++;
+                          if (genreTextAnswers[phraseIndex]?.[trouIndex] === trou.bonneReponse) {
+                            correctCount++;
+                          }
+                        });
+                      });
+                      
+                      const score = Math.round((correctCount / totalQuestions) * 100);
+                      setGenreTextScore(score);
+                      
+                      // Sauvegarder l'exercice
+                      const newExercice = addExercice({
+                        type: generatedExercise.type,
+                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        contenuJSON: {
+                          phrases: generatedExercise.phrases,
+                          answers: genreTextAnswers
+                        },
+                        reponseUtilisateur: genreTextAnswers,
+                        correction: `Score: ${score}/100. ${correctCount} bonnes réponses sur ${totalQuestions}.`,
+                        score: score,
+                      });
+                      
+                      setStep('correcting');
+                    }}
+                    disabled={!getIsExerciseComplete() || isLoading}
+                    className={`px-6 py-3 rounded-md text-white font-medium transition-colors ${
+                      !getIsExerciseComplete() 
+                        ? 'bg-blue-300 cursor-not-allowed w-full'
+                        : 'bg-blue-600 hover:bg-blue-700 cursor-pointer w-full'
+                    }`}
+                  >
+                    {isLoading ? 'Correction en cours...' : `Corriger`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================================
+                 NOUVEAUX EXERCICES : CAS GRAMMATICAUX
+               ======================================================================== */}
+
+            {/* CAS GRAMMATICAUX - Sous-exercice A : Identifier la fonction */}
+            {generatedExercise.type === 'identifier_fonction' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Identifiez la fonction grammaticale du mot en évidence dans chaque phrase.
+                  Score final sur {generatedExercise.questions.length}.
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.questions.map((question: IdentifyFunctionQuestion, index: number) => {
+                    const userAnswer = functionIdentificationAnswers[index];
+                    const isCorrect = userAnswer === question.bonneReponse;
+                    const isAnswered = userAnswer !== undefined;
+
+                    // Remplacer **mot** par <strong>mot</strong>
+                    const phraseWithHtml = question.phrase.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+                    return (
+                      <div 
+                        key={index}
+                        className={`bg-white p-4 rounded-md shadow-sm border-2 transition-colors ${
+                          isAnswered ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50') : 'border-gray-200'
+                        }`}
+                      >
+                        <p className="font-medium text-gray-800 mb-3" 
+                           dangerouslySetInnerHTML={{ __html: phraseWithHtml }}>
+                        </p>
+
+                        <p className="text-sm text-gray-600 mb-3">
+                          Mot en évidence: <strong>{question.motEnEvidence}</strong>
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {question.choix.map((choix: GrammaticalFunction) => {
+                            const isSelected = userAnswer === choix;
+                            return (
+                              <button
+                                key={choix}
+                                onClick={() => {
+                                  setFunctionIdentificationAnswers(prev => ({
+                                    ...prev,
+                                    [index]: isSelected ? undefined : choix
+                                  }));
+                                }}
+                                disabled={isAnswered && !isSelected}
+                                className={`px-4 py-2 rounded-md text-white font-medium transition-colors ${
+                                  isSelected
+                                    ? (isCorrect ? 'bg-green-600' : 'bg-red-600')
+                                    : 'bg-purple-600 hover:bg-purple-700'
+                                }`}
+                              >
+                                {choix}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {isAnswered && !isCorrect && (
+                          <div className="mt-3 bg-red-50 p-2 rounded border border-red-200">
+                            <p className="text-xs text-red-700">
+                              <span className="font-medium">Explication:</span> {question.explication}
+                              <br />
+                              <span className="font-medium">Cas:</span> {question.cas}
+                            </p>
+                          </div>
+                        )}
+
+                        {isAnswered && isCorrect && (
+                          <div className="mt-3 bg-green-50 p-2 rounded border border-green-200">
+                            <p className="text-xs text-green-700">
+                              ✓ Correct ! Cas: {question.cas}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Bouton de correction */}
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      let correctCount = 0;
+                      generatedExercise.questions.forEach((question: IdentifyFunctionQuestion, index: number) => {
+                        if (functionIdentificationAnswers[index] === question.bonneReponse) {
+                          correctCount++;
+                        }
+                      });
+                      const score = Math.round((correctCount / generatedExercise.questions.length) * 100);
+                      setFunctionIdentificationScore(score);
+                      
+                      // Sauvegarder l'exercice
+                      const newExercice = addExercice({
+                        type: generatedExercise.type,
+                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        contenuJSON: {
+                          questions: generatedExercise.questions,
+                          answers: functionIdentificationAnswers
+                        },
+                        reponseUtilisateur: functionIdentificationAnswers,
+                        correction: `Score: ${score}/100. ${correctCount} bonnes réponses sur ${generatedExercise.questions.length}.`,
+                        score: score,
+                      });
+                      
+                      setStep('correcting');
+                    }}
+                    disabled={Object.keys(functionIdentificationAnswers).length < generatedExercise.questions.length || isLoading}
+                    className={`px-6 py-3 rounded-md text-white font-medium transition-colors ${
+                      Object.keys(functionIdentificationAnswers).length >= generatedExercise.questions.length
+                        ? 'bg-purple-600 hover:bg-purple-700 cursor-pointer w-full'
+                        : 'bg-purple-300 cursor-not-allowed w-full'
+                    }`}
+                  >
+                    {isLoading ? 'Correction en cours...' : `Corriger (${Object.keys(functionIdentificationAnswers).length}/${generatedExercise.questions.length})`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CAS GRAMMATICAUX - Sous-exercice B : Choisir le déterminant */}
+            {generatedExercise.type === 'choisir_determinant' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Choisissez le bon article/déterminant selon la fonction et le genre indiqués.
+                  Score final sur {generatedExercise.questions.length}.
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.questions.map((question: ChooseDeterminantQuestion, index: number) => {
+                    const userAnswer = determinantChoiceAnswers[index];
+                    const isCorrect = userAnswer === question.bonneReponse;
+                    const isAnswered = userAnswer !== undefined;
+
+                    return (
+                      <div 
+                        key={index}
+                        className={`bg-white p-4 rounded-md shadow-sm border-2 transition-colors ${
+                          isAnswered ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50') : 'border-gray-200'
+                        }`}
+                      >
+                        <p className="font-medium text-gray-800 mb-2">
+                          Question {index + 1}: {question.phrase}
+                        </p>
+                        
+                        <p className="text-sm text-gray-600 mb-3">
+                          Fonction: <strong>{question.fonction}</strong> | Genre: <strong>{question.genre}</strong>
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {question.choix.map((choix: string) => {
+                            const isSelected = userAnswer === choix;
+                            return (
+                              <button
+                                key={choix}
+                                onClick={() => {
+                                  setDeterminantChoiceAnswers(prev => ({
+                                    ...prev,
+                                    [index]: isSelected ? undefined : choix
+                                  }));
+                                }}
+                                disabled={isAnswered && !isSelected}
+                                className={`px-4 py-2 rounded-md text-white font-medium transition-colors ${
+                                  isSelected
+                                    ? (isCorrect ? 'bg-green-600' : 'bg-red-600')
+                                    : 'bg-orange-600 hover:bg-orange-700'
+                                }`}
+                              >
+                                {choix}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {isAnswered && !isCorrect && (
+                          <div className="mt-3 bg-red-50 p-2 rounded border border-red-200">
+                            <p className="text-xs text-red-700">
+                              <span className="font-medium">Explication:</span> {question.explication}
+                              <br />
+                              <span className="font-medium">Bonne réponse:</span> {question.bonneReponse}
+                            </p>
+                          </div>
+                        )}
+
+                        {isAnswered && isCorrect && (
+                          <div className="mt-3 bg-green-50 p-2 rounded border border-green-200">
+                            <p className="text-xs text-green-700">✓ Correct !</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Bouton de correction */}
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      let correctCount = 0;
+                      generatedExercise.questions.forEach((question: ChooseDeterminantQuestion, index: number) => {
+                        if (determinantChoiceAnswers[index] === question.bonneReponse) {
+                          correctCount++;
+                        }
+                      });
+                      const score = Math.round((correctCount / generatedExercise.questions.length) * 100);
+                      setDeterminantChoiceScore(score);
+                      
+                      // Sauvegarder l'exercice
+                      const newExercice = addExercice({
+                        type: generatedExercise.type,
+                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        contenuJSON: {
+                          questions: generatedExercise.questions,
+                          answers: determinantChoiceAnswers
+                        },
+                        reponseUtilisateur: determinantChoiceAnswers,
+                        correction: `Score: ${score}/100. ${correctCount} bonnes réponses sur ${generatedExercise.questions.length}.`,
+                        score: score,
+                      });
+                      
+                      setStep('correcting');
+                    }}
+                    disabled={Object.keys(determinantChoiceAnswers).length < generatedExercise.questions.length || isLoading}
+                    className={`px-6 py-3 rounded-md text-white font-medium transition-colors ${
+                      Object.keys(determinantChoiceAnswers).length >= generatedExercise.questions.length
+                        ? 'bg-orange-600 hover:bg-orange-700 cursor-pointer w-full'
+                        : 'bg-orange-300 cursor-not-allowed w-full'
+                    }`}
+                  >
+                    {isLoading ? 'Correction en cours...' : `Corriger (${Object.keys(determinantChoiceAnswers).length}/${generatedExercise.questions.length})`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CAS GRAMMATICAUX - Sous-exercice C : Tableau de déclinaison */}
+            {generatedExercise.type === 'tableau_declinaison' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Complétez les cellules manquantes du tableau de déclinaison.
+                </p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-gray-300 text-sm bg-white">
+                    <thead>
+                      <tr className="bg-[#3730a3] text-white">
+                        <th className="p-2 border border-gray-300">Cas / Genre</th>
+                        <th className="p-2 border border-gray-300">Nominatif</th>
+                        <th className="p-2 border border-gray-300">Accusatif</th>
+                        <th className="p-2 border border-gray-300">Datif</th>
+                        <th className="p-2 border border-gray-300">Génitif</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {generatedExercise.rows.map((row: DeclensionRow, rowIndex: number) => (
+                        <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                          <td className="p-2 border border-gray-300 font-medium">{row.genre}</td>
+                          {['nominatif', 'accusatif', 'datif', 'genitif'].map((cas: string) => {
+                            const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+                            const userAnswer = declensionTableAnswers[row.genre]?.[cas];
+                            const isCorrect = userAnswer === cell.value;
+                            const isAnswered = userAnswer !== undefined && userAnswer !== '';
+                            
+                            return (
+                              <td key={cas} className="p-1 border border-gray-300">
+                                {cell.isVisible ? (
+                                  <div className="p-2 text-center font-medium text-gray-700">{cell.value}</div>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={userAnswer || ''}
+                                    onChange={(e) => {
+                                      const answer = e.target.value;
+                                      setDeclensionTableAnswers(prev => ({
+                                        ...prev,
+                                        [row.genre]: {
+                                          ...prev[row.genre],
+                                          [cas]: answer
+                                        }
+                                      }));
+                                    }}
+                                    className={`w-full p-2 text-center rounded border ${
+                                      isAnswered 
+                                        ? (isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50')
+                                        : 'border-gray-300'
+                                    }`}
+                                    placeholder="?"
+                                  />
+                                )}
+                                {isAnswered && !isCorrect && (
+                                  <div className="text-xs text-red-600 text-center mt-1">
+                                    Réponse: {cell.value}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Bouton de correction */}
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      let correctCount = 0;
+                      let totalQuestions = 0;
+                      
+                      generatedExercise.rows.forEach((row: DeclensionRow) => {
+                        ['nominatif', 'accusatif', 'datif', 'genitif'].forEach((cas: string) => {
+                          const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+                          if (!cell.isVisible) {
+                            totalQuestions++;
+                            if (declensionTableAnswers[row.genre]?.[cas] === cell.value) {
+                              correctCount++;
+                            }
+                          }
+                        });
+                      });
+                      
+                      const score = Math.round((correctCount / totalQuestions) * 100);
+                      setDeclensionTableScore(score);
+                      
+                      // Sauvegarder l'exercice
+                      const newExercice = addExercice({
+                        type: generatedExercise.type,
+                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        contenuJSON: {
+                          rows: generatedExercise.rows,
+                          answers: declensionTableAnswers
+                        },
+                        reponseUtilisateur: declensionTableAnswers,
+                        correction: `Score: ${score}/100. ${correctCount} bonnes réponses sur ${totalQuestions}.`,
+                        score: score,
+                      });
+                      
+                      setStep('correcting');
+                    }}
+                    disabled={!getIsExerciseComplete() || isLoading}
+                    className={`px-6 py-3 rounded-md text-white font-medium transition-colors ${
+                      !getIsExerciseComplete() 
+                        ? 'bg-green-300 cursor-not-allowed w-full'
+                        : 'bg-green-600 hover:bg-green-700 cursor-pointer w-full'
+                    }`}
+                  >
+                    {isLoading ? 'Correction en cours...' : `Corriger`}
+                  </button>
                 </div>
               </div>
             )}

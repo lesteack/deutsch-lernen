@@ -60,7 +60,7 @@ export interface Manuel {
 }
 
 /** Type pour les exercices */
-export type ExerciceType = 'qcm' | 'texteATrous' | 'traduction' | 'production' | 'questionsOuvertes' | 'remiseEnOrdre' | 'conjugaison' | 'completionDialogue' | 'association' | 'dictee';
+export type ExerciceType = 'qcm' | 'texteATrous' | 'traduction' | 'production' | 'questionsOuvertes' | 'remiseEnOrdre' | 'conjugaison' | 'completionDialogue' | 'association' | 'dictee' | 'genre' | 'genre_texte' | 'identifier_fonction' | 'choisir_determinant' | 'tableau_declinaison';
 
 export interface Exercice {
   id: string;
