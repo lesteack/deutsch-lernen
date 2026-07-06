@@ -8,6 +8,7 @@ import {
   getExercices,
   getEvaluations,
   resetStorage as resetAllData,
+  resetResultats,
   type SuiviProgression,
   type Lecon,
   type Exercice,
@@ -75,6 +76,8 @@ export default function ProfilPage() {
   const [historique, setHistorique] = useState<HistoriqueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showResetResultsConfirm, setShowResetResultsConfirm] = useState(false);
+  const [resultsDeleted, setResultsDeleted] = useState(false);
 
   // Charger les données
   useEffect(() => {
@@ -191,6 +194,17 @@ export default function ProfilPage() {
       window.location.reload();
     }
     setShowResetConfirm(false);
+  }, []);
+
+  // Réinitialiser uniquement les résultats
+  const handleResetResults = useCallback(() => {
+    resetResultats();
+    setResultsDeleted(true);
+    setShowResetResultsConfirm(false);
+    // Rediriger vers le dashboard après un court délai
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 1500);
   }, []);
 
   if (isLoading) {
@@ -412,7 +426,48 @@ export default function ProfilPage() {
       </div>
 
       {/* ======================================================================
-           BOUTON DE RÉINITIALISATION
+           BOUTON DE RÉINITIALISATION PARTIELLE
+         ====================================================================== */}
+      <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-xl shadow-md p-6 border border-orange-200 mb-6">
+        <h2 className="text-lg font-semibold mb-4 text-orange-600">
+          🗑️ Effacer mes résultats
+        </h2>
+        <p className="text-sm text-orange-700 mb-4">
+          Cela supprimera tous vos exercices et évaluations, et réinitialisera votre niveau estimé.
+          Vos leçons importées seront conservées.
+        </p>
+        
+        {resultsDeleted ? (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-md text-sm">
+            ✅ Résultats effacés ! Redirection vers le dashboard...
+          </div>
+        ) : showResetResultsConfirm ? (
+          <div className="flex gap-3">
+            <button
+              onClick={handleResetResults}
+              className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors text-sm font-medium"
+            >
+              Effacer les résultats
+            </button>
+            <button
+              onClick={() => setShowResetResultsConfirm(false)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm"
+            >
+              Annuler
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowResetResultsConfirm(true)}
+            className="px-4 py-2 bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 transition-colors text-sm font-medium"
+          >
+            Effacer mes résultats (garder mes leçons)
+          </button>
+        )}
+      </div>
+
+      {/* ======================================================================
+           BOUTON DE RÉINITIALISATION COMPLÈTE
          ====================================================================== */}
       <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-xl shadow-md p-6 border border-red-200">
         <h2 className="text-lg font-semibold mb-4 text-red-600">

@@ -509,6 +509,24 @@ export function resetStorage(): void {
   initStorage();
 }
 
+/**
+ * Réinitialise uniquement les résultats (exercices, évaluations, progression)
+ * mais conserve les manuels, chapitres et leçons importées
+ */
+export function resetResultats(): void {
+  if (typeof window === 'undefined') return;
+  
+  // Supprime exercices, évaluations et progression
+  localStorage.removeItem(STORAGE_KEYS.EXERCICES);
+  localStorage.removeItem(STORAGE_KEYS.EVALUATIONS);
+  localStorage.removeItem(STORAGE_KEYS.PROGRESSION);
+  
+  // Réinitialise avec des tableaux/objets vides
+  localStorage.setItem(STORAGE_KEYS.EXERCICES, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.EVALUATIONS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.PROGRESSION, JSON.stringify(createEmptyProgression()));
+}
+
 // ============================================================================
 // MANUELS
 // ============================================================================
