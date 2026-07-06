@@ -48,7 +48,34 @@ interface MistralTexteATrous {
   }>;
 }
 
-type MistralResponse = MistralQCM | MistralGenre | MistralTexteATrous;
+// Type pour réponse Mistral - Conjugaison
+interface MistralConjugaison {
+  exercices: Array<{
+    verbe: string;
+    pronom: string;
+    temps: string;
+    bonneReponse: string;
+    explication: string;
+  }>;
+}
+
+// Type pour réponse Mistral - Traduction
+interface MistralTraduction {
+  phrases: Array<{
+    fr: string;
+    de: string;
+    indice: string;
+  }>;
+}
+
+// Type pour réponse Mistral - Surprise (Mistral choisit le type)
+interface MistralSurprise {
+  typeChoisi: 'qcm' | 'genre' | 'texteATrous' | 'conjugaison' | 'traduction';
+  raisonChoix: string;
+  exercice: MistralQCM | MistralGenre | MistralTexteATrous | MistralConjugaison | MistralTraduction;
+}
+
+type MistralResponse = MistralQCM | MistralGenre | MistralTexteATrous | MistralConjugaison | MistralTraduction | MistralSurprise;
 
 // Type pour suivre les réponses QCM
 interface QCMAnswers {
@@ -93,7 +120,7 @@ export default function ExercicesPage() {
   const [pageState, setPageState] = useState<PageState>('selection');
   const [lecons, setLecons] = useState<Lecon[]>([]);
   const [selectedLecons, setSelectedLecons] = useState<string[]>([]);
-  const [selectedType, setSelectedType] = useState<ExerciceType>('qcm');
+  const [selectedType, setSelectedType] = useState<ExerciceType | 'surprise'>('qcm');
   const [niveau, setNiveau] = useState<string>('B1');
   
   // State pour l'exercice généré
@@ -103,6 +130,12 @@ export default function ExercicesPage() {
   const [qcmAnswers, setQcmAnswers] = useState<QCMAnswers>({});
   const [genreAnswers, setGenreAnswers] = useState<GenreAnswers>({});
   const [texteATrousAnswers, setTexteATrousAnswers] = useState<TexteATrousAnswers>({});
+  const [conjugaisonAnswers, setConjugaisonAnswers] = useState<Record<number, string>>({});
+  const [traductionAnswers, setTraductionAnswers] = useState<Record<number, string>>({});
+  
+  // State pour le type choisi par Mistral en mode surprise
+  const [surpriseType, setSurpriseType] = useState<ExerciceType | null>(null);
+  const [surpriseReason, setSurpriseReason] = useState<string | null>(null);
   
   // State pour la correction
   const [correction, setCorrection] = useState<CorrectionResult | null>(null);
@@ -166,9 +199,38 @@ export default function ExercicesPage() {
   const buildPrompt = () => {
     const content = getContent();
     
-    switch (selectedType) {
-      case 'qcm':
-        return `Génère 10 questions QCM en allemand sur ce contenu : ${content}.
+    if (selectedType === 'surprise') {
+      return `Tu es un professeur d'allemand expert.
+Analyse ce contenu de leçon : ${content}
+
+1. Choisis le TYPE D'EXERCICE le plus pédagogique pour ce contenu parmi :
+   - qcm : si le contenu contient des règles, définitions, ou vocabulaire varié
+   - genre : si le contenu contient beaucoup de noms avec articles
+   - texteATrous : si le contenu contient des structures grammaticales répétitives
+   - conjugaison : si le contenu parle de verbes et de temps
+   - traduction : si le contenu est un lexique bilingue ou liste de vocabulaire
+
+2. Génère l'exercice correspondant.
+
+Réponds UNIQUEMENT en JSON sans markdown :
+{
+  "typeChoisi": "qcm" | "genre" | "texteATrous" | "conjugaison" | "traduction",
+  "raisonChoix": "Explication courte en français du pourquoi ce type",
+  "exercice": {
+    ... (structure JSON du type choisi)
+  }
+}
+
+Rappel des structures attendues :
+- qcm → { questions: [{question, choix: [4 options], bonneReponse: index, explication}] }
+- genre → { mots: [{nom, article, traduction, astuce}] }
+- texteATrous → { phrases: [{texteAvecTrous, trous: [{position, bonneReponse, options}]}] }
+- conjugaison → { exercices: [{verbe, pronom, temps, bonneReponse, explication}] }
+- traduction → { phrases: [{fr, de, indice}] }`;
+    }
+    
+    if (selectedType === 'qcm') {
+      return `Génère 10 questions QCM en allemand sur ce contenu : ${content}.
 Niveau : ${niveau}.
 Réponds UNIQUEMENT en JSON sans markdown :
 {
@@ -181,9 +243,10 @@ Réponds UNIQUEMENT en JSON sans markdown :
     }
   ]
 }`;
-      
-      case 'genre':
-        return `Génère 10 noms allemands avec leur article tirés de ce contenu : ${content}.
+    }
+    
+    if (selectedType === 'genre') {
+      return `Génère 10 noms allemands avec leur article tirés de ce contenu : ${content}.
 Réponds UNIQUEMENT en JSON sans markdown :
 {
   "mots": [
@@ -195,9 +258,10 @@ Réponds UNIQUEMENT en JSON sans markdown :
     }
   ]
 }`;
-      
-      case 'texteATrous':
-        return `Génère 5 phrases en allemand avec des trous pour les articles (der/die/das/den/dem/des).
+    }
+    
+    if (selectedType === 'texteATrous') {
+      return `Génère 5 phrases en allemand avec des trous pour les articles (der/die/das/den/dem/des).
 Basé sur ce contenu : ${content}.
 Réponds UNIQUEMENT en JSON sans markdown :
 {
@@ -211,10 +275,9 @@ Réponds UNIQUEMENT en JSON sans markdown :
     }
   ]
 }`;
-      
-      default:
-        return '';
     }
+    
+    return '';
   };
 
   // Générer l'exercice
@@ -271,28 +334,66 @@ Réponds UNIQUEMENT en JSON sans markdown :
         throw new Error('Réponse Mistral vide ou invalide');
       }
       
-      // Vérifier selon le type
-      if (selectedType === 'qcm') {
-        const qcmData = parsedData as MistralQCM;
-        if (!qcmData.questions || !Array.isArray(qcmData.questions) || qcmData.questions.length === 0) {
-          throw new Error('Réponse Mistral invalide pour QCM : questions manquantes ou vide');
+      // Gérer le mode surprise
+      if (selectedType === 'surprise') {
+        const surpriseData = parsedData as MistralSurprise;
+        
+        // Vérifier la structure de la surprise
+        if (!surpriseData.typeChoisi || !surpriseData.raisonChoix || !surpriseData.exercice) {
+          throw new Error('Réponse Mistral invalide pour Surprise : structure incorrecte');
         }
-      } else if (selectedType === 'genre') {
-        const genreData = parsedData as MistralGenre;
-        if (!genreData.mots || !Array.isArray(genreData.mots) || genreData.mots.length === 0) {
-          throw new Error('Réponse Mistral invalide pour Genre : mots manquantes ou vide');
+        
+        // Vérifier que typeChoisi est valide
+        const validTypes = ['qcm', 'genre', 'texteATrous', 'conjugaison', 'traduction'];
+        if (!validTypes.includes(surpriseData.typeChoisi)) {
+          throw new Error(`Type choisi invalide : ${surpriseData.typeChoisi}`);
         }
-      } else if (selectedType === 'texteATrous') {
-        const texteData = parsedData as MistralTexteATrous;
-        if (!texteData.phrases || !Array.isArray(texteData.phrases) || texteData.phrases.length === 0) {
-          throw new Error('Réponse Mistral invalide pour Texte à trous : phrases manquantes ou vide');
-        }
+        
+        // Stocker le type choisi et la raison
+        setSurpriseType(surpriseData.typeChoisi);
+        setSurpriseReason(surpriseData.raisonChoix);
+        
+        // Extraire l'exercice
+        setExerciseData(surpriseData.exercice);
+        setPageState('exercice');
       } else {
-        throw new Error('Type d\'exercice non reconnu');
+        // Vérifier selon le type
+        if (selectedType === 'qcm') {
+          const qcmData = parsedData as MistralQCM;
+          if (!qcmData.questions || !Array.isArray(qcmData.questions) || qcmData.questions.length === 0) {
+            throw new Error('Réponse Mistral invalide pour QCM : questions manquantes ou vide');
+          }
+        } else if (selectedType === 'genre') {
+          const genreData = parsedData as MistralGenre;
+          if (!genreData.mots || !Array.isArray(genreData.mots) || genreData.mots.length === 0) {
+            throw new Error('Réponse Mistral invalide pour Genre : mots manquantes ou vide');
+          }
+        } else if (selectedType === 'texteATrous') {
+          const texteData = parsedData as MistralTexteATrous;
+          if (!texteData.phrases || !Array.isArray(texteData.phrases) || texteData.phrases.length === 0) {
+            throw new Error('Réponse Mistral invalide pour Texte à trous : phrases manquantes ou vide');
+          }
+        } else if (selectedType === 'conjugaison') {
+          const conjugaisonData = parsedData as MistralConjugaison;
+          if (!conjugaisonData.exercices || !Array.isArray(conjugaisonData.exercices) || conjugaisonData.exercices.length === 0) {
+            throw new Error('Réponse Mistral invalide pour Conjugaison : exercices manquantes ou vide');
+          }
+        } else if (selectedType === 'traduction') {
+          const traductionData = parsedData as MistralTraduction;
+          if (!traductionData.phrases || !Array.isArray(traductionData.phrases) || traductionData.phrases.length === 0) {
+            throw new Error('Réponse Mistral invalide pour Traduction : phrases manquantes ou vide');
+          }
+        } else {
+          throw new Error('Type d\'exercice non reconnu');
+        }
+        
+        // Réinitialiser le type surprise
+        setSurpriseType(null);
+        setSurpriseReason(null);
+        
+        setExerciseData(parsedData);
+        setPageState('exercice');
       }
-      
-      setExerciseData(parsedData);
-      setPageState('exercice');
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
@@ -307,12 +408,14 @@ Réponds UNIQUEMENT en JSON sans markdown :
   const isExerciseComplete = () => {
     if (!exerciseData) return false;
     
+    const effectiveType = getEffectiveType();
+    
     try {
-      if (selectedType === 'qcm') {
+      if (effectiveType === 'qcm') {
         return Object.keys(qcmAnswers).length === (exerciseData as MistralQCM).questions.length;
-      } else if (selectedType === 'genre') {
+      } else if (effectiveType === 'genre') {
         return Object.keys(genreAnswers).length === (exerciseData as MistralGenre).mots.length;
-      } else if (selectedType === 'texteATrous') {
+      } else if (effectiveType === 'texteATrous') {
         const texteData = exerciseData as MistralTexteATrous;
         let allFilled = true;
         for (let p = 0; p < texteData.phrases.length; p++) {
@@ -326,6 +429,10 @@ Réponds UNIQUEMENT en JSON sans markdown :
           if (!allFilled) break;
         }
         return allFilled;
+      } else if (effectiveType === 'conjugaison') {
+        return Object.keys(conjugaisonAnswers).length === (exerciseData as MistralConjugaison).exercices.length;
+      } else if (effectiveType === 'traduction') {
+        return Object.keys(traductionAnswers).length === (exerciseData as MistralTraduction).phrases.length;
       }
       return false;
     } catch {
@@ -339,7 +446,9 @@ Réponds UNIQUEMENT en JSON sans markdown :
     
     let correctionResult: CorrectionResult | null = null;
     
-    switch (selectedType) {
+    const effectiveType = getEffectiveType();
+    
+    switch (effectiveType) {
       case 'qcm': {
         const qcmData = exerciseData as MistralQCM;
         let correctCount = 0;
@@ -432,6 +541,64 @@ Réponds UNIQUEMENT en JSON sans markdown :
         };
         break;
       }
+      
+      case 'conjugaison': {
+        const conjugaisonData = exerciseData as MistralConjugaison;
+        let correctCount = 0;
+        const corrections: CorrectionResult['corrections'] = [];
+        
+        conjugaisonData.exercices.forEach((exercice, index) => {
+          const userAnswer = conjugaisonAnswers[index];
+          const isCorrect = userAnswer?.toLowerCase() === exercice.bonneReponse.toLowerCase();
+          if (isCorrect) correctCount++;
+          
+          corrections.push({
+            questionIndex: index,
+            isCorrect,
+            userAnswer: userAnswer || null,
+            correctAnswer: exercice.bonneReponse,
+            explanation: isCorrect ? '' : exercice.explication,
+          });
+        });
+        
+        const totalScore = Math.round((correctCount / conjugaisonData.exercices.length) * 100);
+        correctionResult = {
+          totalScore,
+          totalQuestions: conjugaisonData.exercices.length,
+          correctCount,
+          corrections,
+        };
+        break;
+      }
+      
+      case 'traduction': {
+        const traductionData = exerciseData as MistralTraduction;
+        let correctCount = 0;
+        const corrections: CorrectionResult['corrections'] = [];
+        
+        traductionData.phrases.forEach((phrase, index) => {
+          const userAnswer = traductionAnswers[index];
+          const isCorrect = userAnswer?.toLowerCase() === phrase.de.toLowerCase();
+          if (isCorrect) correctCount++;
+          
+          corrections.push({
+            questionIndex: index,
+            isCorrect,
+            userAnswer: userAnswer || null,
+            correctAnswer: phrase.de,
+            explanation: isCorrect ? '' : phrase.indice,
+          });
+        });
+        
+        const totalScore = Math.round((correctCount / traductionData.phrases.length) * 100);
+        correctionResult = {
+          totalScore,
+          totalQuestions: traductionData.phrases.length,
+          correctCount,
+          corrections,
+        };
+        break;
+      }
     }
     
     setCorrection(correctionResult);
@@ -439,12 +606,18 @@ Réponds UNIQUEMENT en JSON sans markdown :
     
     // Sauvegarder l'exercice
     if (correctionResult) {
+      const effectiveType = getEffectiveType();
+      // En mode surprise, on utilise surpriseType qui est toujours un ExerciceType
+      const typeToSave: ExerciceType = effectiveType === 'surprise' ? surpriseType! : effectiveType;
       const exerciceToSave = {
-        type: selectedType,
+        type: typeToSave,
         leconsAssociees: selectedLecons,
         contenuJSON: exerciseData as unknown as Record<string, unknown>,
-        reponseUtilisateur: selectedType === 'qcm' ? qcmAnswers : 
-                        selectedType === 'genre' ? genreAnswers : texteATrousAnswers,
+        reponseUtilisateur: effectiveType === 'qcm' ? qcmAnswers : 
+                        effectiveType === 'genre' ? genreAnswers :
+                        effectiveType === 'texteATrous' ? texteATrousAnswers :
+                        effectiveType === 'conjugaison' ? conjugaisonAnswers :
+                        traductionAnswers,
         correction: `Score: ${correctionResult.totalScore}/100. ${correctionResult.correctCount}/${correctionResult.totalQuestions} bonnes réponses.`,
         score: correctionResult.totalScore,
       };
@@ -461,24 +634,36 @@ Réponds UNIQUEMENT en JSON sans markdown :
     setQcmAnswers({});
     setGenreAnswers({});
     setTexteATrousAnswers({});
+    setConjugaisonAnswers({});
+    setTraductionAnswers({});
     setCorrection(null);
     setError(null);
+    setSurpriseType(null);
+    setSurpriseReason(null);
   };
 
   // Get question count for display
   const getQuestionCount = () => {
     if (!exerciseData) return 0;
     
-    if (selectedType === 'qcm') {
+    const effectiveType = getEffectiveType();
+    
+    if (effectiveType === 'qcm') {
       return (exerciseData as MistralQCM).questions.length;
     }
-    if (selectedType === 'genre') {
+    if (effectiveType === 'genre') {
       return (exerciseData as MistralGenre).mots.length;
     }
-    if (selectedType === 'texteATrous') {
+    if (effectiveType === 'texteATrous') {
       return (exerciseData as MistralTexteATrous).phrases.reduce(
         (count, phrase) => count + phrase.trous.length, 0
       );
+    }
+    if (effectiveType === 'conjugaison') {
+      return (exerciseData as MistralConjugaison).exercices.length;
+    }
+    if (effectiveType === 'traduction') {
+      return (exerciseData as MistralTraduction).phrases.length;
     }
     return 0;
   };
@@ -491,6 +676,26 @@ Réponds UNIQUEMENT en JSON sans markdown :
     if (correction.totalScore >= 60) return 'Bien joué ! 👍';
     if (correction.totalScore >= 40) return 'Pas mal, continuez ! 💪';
     return 'Courage, pratiquez encore ! 📚';
+  };
+
+  // Convertir type technique en label français
+  const getTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      'qcm': 'QCM - 10 questions',
+      'genre': 'Genre des noms (der/die/das)',
+      'texteATrous': 'Texte à trous avec articles',
+      'conjugaison': 'Conjugaison',
+      'traduction': 'Traduction',
+    };
+    return labels[type] || type;
+  };
+
+  // Retourne le type effectif (gère le mode surprise)
+  const getEffectiveType = (): ExerciceType | 'surprise' => {
+    if (selectedType === 'surprise' && surpriseType) {
+      return surpriseType as ExerciceType;
+    }
+    return selectedType;
   };
 
   // ==========================================================================
@@ -587,7 +792,22 @@ Réponds UNIQUEMENT en JSON sans markdown :
               <h3 className="text-lg font-medium text-gray-800">
                 Type d'exercice
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Surprise en première position */}
+                <button
+                  onClick={() => setSelectedType('surprise')}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    selectedType === 'surprise'
+                      ? 'border-purple-500 bg-purple-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-left">
+                    <p className="font-medium text-gray-800">🎲 Surprise</p>
+                    <p className="text-sm text-gray-500">Mistral choisit le meilleur exercice</p>
+                  </div>
+                </button>
+                
                 <button
                   onClick={() => setSelectedType('qcm')}
                   className={`p-4 rounded-xl border-2 transition-all ${
@@ -627,6 +847,34 @@ Réponds UNIQUEMENT en JSON sans markdown :
                   <div className="text-left">
                     <p className="font-medium text-gray-800">Texte à trous</p>
                     <p className="text-sm text-gray-500">5 phrases avec articles</p>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setSelectedType('conjugaison')}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    selectedType === 'conjugaison'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-left">
+                    <p className="font-medium text-gray-800">Conjugaison</p>
+                    <p className="text-sm text-gray-500">Verbes à conjuguer</p>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setSelectedType('traduction')}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    selectedType === 'traduction'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-left">
+                    <p className="font-medium text-gray-800">Traduction</p>
+                    <p className="text-sm text-gray-500">Phrases à traduire</p>
                   </div>
                 </button>
               </div>
@@ -679,7 +927,9 @@ Réponds UNIQUEMENT en JSON sans markdown :
           <div className="bg-white rounded-xl shadow-lg p-8 text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600 text-lg">
-              Mistral génère votre exercice...
+              {selectedType === 'surprise' 
+                ? '🎲 Mistral analyse votre leçon et choisit le meilleur exercice...' 
+                : `Mistral génère votre exercice de ${getTypeLabel(selectedType)}...`}
             </p>
             <p className="text-gray-400 text-sm mt-2">
               Cela peut prendre quelques secondes
@@ -692,12 +942,22 @@ Réponds UNIQUEMENT en JSON sans markdown :
         {/* =============================================================== */}
         {pageState === 'exercice' && exerciseData && (
           <div className="bg-white rounded-xl shadow-lg p-6 space-y-6">
+            {/* Bandeau Surprise */}
+            {surpriseType && surpriseReason && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-4">
+                <p className="text-indigo-800 font-medium">
+                  🎲 Mistral a choisi : {getTypeLabel(surpriseType)}
+                </p>
+                <p className="text-indigo-600 text-sm mt-1">
+                  Pourquoi : {surpriseReason}
+                </p>
+              </div>
+            )}
+            
             {/* En-tête */}
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-800">
-                {selectedType === 'qcm' && 'QCM - 10 questions'}
-                {selectedType === 'genre' && 'Genre des noms (der/die/das)'}
-                {selectedType === 'texteATrous' && 'Texte à trous avec articles'}
+                {getTypeLabel(getEffectiveType())}
               </h2>
               <span className="text-sm text-gray-500">
                 Niveau: {niveau}
@@ -769,7 +1029,7 @@ Réponds UNIQUEMENT en JSON sans markdown :
               </div>
             )}
 
-            {selectedType === 'texteATrous' && (
+            {getEffectiveType() === 'texteATrous' && (
               <div className="space-y-4 max-h-[60vh] overflow-y-auto">
                 {(exerciseData as MistralTexteATrous).phrases.map((phrase, phraseIndex) => (
                   <div key={phraseIndex} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -809,10 +1069,65 @@ Réponds UNIQUEMENT en JSON sans markdown :
               </div>
             )}
 
+            {getEffectiveType() === 'conjugaison' && (
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                {(exerciseData as MistralConjugaison).exercices.map((exercice, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="font-medium text-gray-800 mb-2">
+                      Question {index + 1}/{getQuestionCount()}
+                    </p>
+                    <p className="text-gray-700 mb-3">
+                      Conjuguez le verbe <strong>{exercice.verbe}</strong> avec le pronom <strong>{exercice.pronom}</strong> au <strong>{exercice.temps}</strong>:
+                    </p>
+                    <input
+                      type="text"
+                      value={conjugaisonAnswers[index] || ''}
+                      onChange={(e) => setConjugaisonAnswers(prev => ({
+                        ...prev,
+                        [index]: e.target.value
+                      }))}
+                      placeholder="Votre réponse"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {getEffectiveType() === 'traduction' && (
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                {(exerciseData as MistralTraduction).phrases.map((phrase, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="font-medium text-gray-800 mb-2">
+                      Question {index + 1}/{getQuestionCount()}
+                    </p>
+                    <p className="text-gray-700 mb-3">
+                      Traduisz en allemand: <strong>{phrase.fr}</strong>
+                    </p>
+                    {phrase.indice && (
+                      <p className="text-sm text-blue-600 mb-2">Indice: {phrase.indice}</p>
+                    )}
+                    <input
+                      type="text"
+                      value={traductionAnswers[index] || ''}
+                      onChange={(e) => setTraductionAnswers(prev => ({
+                        ...prev,
+                        [index]: e.target.value
+                      }))}
+                      placeholder="Votre réponse"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Indicateur de progression */}
             <div className="text-sm text-gray-500">
-              {selectedType === 'qcm' ? Object.keys(qcmAnswers).length :
-               selectedType === 'genre' ? Object.keys(genreAnswers).length :
+              {getEffectiveType() === 'qcm' ? Object.keys(qcmAnswers).length :
+               getEffectiveType() === 'genre' ? Object.keys(genreAnswers).length :
+               getEffectiveType() === 'conjugaison' ? Object.keys(conjugaisonAnswers).length :
+               getEffectiveType() === 'traduction' ? Object.keys(traductionAnswers).length :
                Object.values(texteATrousAnswers).reduce((count, phraseAnswers) => 
                  count + Object.keys(phraseAnswers).length, 0
                )}
