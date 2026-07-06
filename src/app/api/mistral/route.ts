@@ -145,13 +145,30 @@ export async function POST(request: Request) {
     // Si json_object a été demandé, essayer de parser la réponse
     if (requestBody.responseFormat === 'json_object') {
       try {
+        // Essayer de parser directement
         return NextResponse.json(JSON.parse(response));
       } catch {
-        // Si le parse échoue, retourner la réponse brute avec un warning
-        return NextResponse.json({
-          warning: 'La réponse n\'est pas un JSON valide',
-          response,
-        });
+        // Si le parse échoue, essayer d'extraire le JSON de structures courantes
+        try {
+          // Cas 1: Réponse wrapée dans {outputs: [{text: "..."}]}
+          const parsed = JSON.parse(response);
+          if (parsed?.outputs?.[0]?.text) {
+            return NextResponse.json(JSON.parse(parsed.outputs[0].text));
+          }
+          // Cas 2: Réponse wrapée dans {choices: [{message: {content: "..."}}]}
+          if (parsed?.choices?.[0]?.message?.content) {
+            return NextResponse.json(JSON.parse(parsed.choices[0].message.content));
+          }
+          // Cas 3: Réponse est une string JSON valide
+          return NextResponse.json(JSON.parse(response));
+        } catch (innerError) {
+          // Si tout échoue, retourner la réponse brute avec un warning
+          console.error('[API Mistral] Impossible de parser la réponse JSON:', innerError);
+          return NextResponse.json({
+            warning: 'La réponse n\'est pas un JSON valide',
+            rawResponse: response,
+          });
+        }
       }
     }
 

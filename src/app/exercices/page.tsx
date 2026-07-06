@@ -1996,8 +1996,124 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           // Correction par défaut pour production
           correctionResult = correctTextExercise();
           break;
+        
+        case 'genre': {
+          let correctCount = 0;
+          const corrections: ExerciseCorrection['corrections'] = [];
+          generatedExercise.mots.forEach((mot: GenreWord, index: number) => {
+            const userAnswer = genreAnswers[index];
+            const isCorrect = userAnswer === mot.article;
+            if (isCorrect) correctCount++;
+            corrections.push({
+              questionIndex: index,
+              isCorrect,
+              userAnswer: userAnswer || null,
+              correctAnswer: mot.article,
+              explanation: isCorrect ? '' : mot.astuce,
+            });
+          });
+          const totalScore = Math.round((correctCount / generatedExercise.mots.length) * 100);
+          setGenreScore(totalScore);
+          correctionResult = { totalScore, totalQuestions: generatedExercise.mots.length, correctCount, corrections };
+          break;
+        }
+        
+        case 'genre_texte': {
+          let correctCount = 0;
+          let totalQuestions = 0;
+          const corrections: ExerciseCorrection['corrections'] = [];
+          generatedExercise.phrases.forEach((phrase: GenreTextPhrase, phraseIndex: number) => {
+            phrase.trous.forEach((trou: GenreTextGap, trouIndex: number) => {
+              totalQuestions++;
+              const userAnswer = genreTextAnswers[phraseIndex]?.[trouIndex];
+              const isCorrect = userAnswer === trou.bonneReponse;
+              if (isCorrect) correctCount++;
+              corrections.push({
+                questionIndex: totalQuestions - 1,
+                isCorrect,
+                userAnswer: userAnswer || null,
+                correctAnswer: trou.bonneReponse,
+                explanation: isCorrect ? '' : `La bonne réponse était: ${trou.bonneReponse}`,
+              });
+            });
+          });
+          const totalScore = Math.round((correctCount / Math.max(totalQuestions, 1)) * 100);
+          setGenreTextScore(totalScore);
+          correctionResult = { totalScore, totalQuestions, correctCount, corrections };
+          break;
+        }
+        
+        case 'identifier_fonction': {
+          let correctCount = 0;
+          const corrections: ExerciseCorrection['corrections'] = [];
+          generatedExercise.questions.forEach((q: IdentifyFunctionQuestion, index: number) => {
+            const userAnswer = functionIdentificationAnswers[index];
+            const isCorrect = userAnswer === q.bonneReponse;
+            if (isCorrect) correctCount++;
+            corrections.push({
+              questionIndex: index,
+              isCorrect,
+              userAnswer: userAnswer || null,
+              correctAnswer: q.bonneReponse,
+              explanation: isCorrect ? '' : q.explication,
+            });
+          });
+          const totalScore = Math.round((correctCount / Math.max(generatedExercise.questions.length, 1)) * 100);
+          setFunctionIdentificationScore(totalScore);
+          correctionResult = { totalScore, totalQuestions: generatedExercise.questions.length, correctCount, corrections };
+          break;
+        }
+        
+        case 'choisir_determinant': {
+          let correctCount = 0;
+          const corrections: ExerciseCorrection['corrections'] = [];
+          generatedExercise.questions.forEach((q: ChooseDeterminantQuestion, index: number) => {
+            const userAnswer = determinantChoiceAnswers[index];
+            const isCorrect = userAnswer === q.bonneReponse;
+            if (isCorrect) correctCount++;
+            corrections.push({
+              questionIndex: index,
+              isCorrect,
+              userAnswer: userAnswer || null,
+              correctAnswer: q.bonneReponse,
+              explanation: isCorrect ? '' : q.explication,
+            });
+          });
+          const totalScore = Math.round((correctCount / Math.max(generatedExercise.questions.length, 1)) * 100);
+          setDeterminantChoiceScore(totalScore);
+          correctionResult = { totalScore, totalQuestions: generatedExercise.questions.length, correctCount, corrections };
+          break;
+        }
+        
+        case 'tableau_declinaison': {
+          let correctCount = 0;
+          let totalQuestions = 0;
+          const corrections: ExerciseCorrection['corrections'] = [];
+          generatedExercise.rows.forEach((row: DeclensionRow) => {
+            ['nominatif', 'accusatif', 'datif', 'genitif'].forEach((cas: string) => {
+              const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+              if (!cell.isVisible) {
+                totalQuestions++;
+                const userAnswer = declensionTableAnswers[row.genre]?.[cas];
+                const isCorrect = userAnswer === cell.value;
+                if (isCorrect) correctCount++;
+                corrections.push({
+                  questionIndex: totalQuestions - 1,
+                  isCorrect,
+                  userAnswer: userAnswer || null,
+                  correctAnswer: cell.value,
+                  explanation: '',
+                });
+              }
+            });
+          });
+          const totalScore = Math.round((correctCount / Math.max(totalQuestions, 1)) * 100);
+          setDeclensionTableScore(totalScore);
+          correctionResult = { totalScore, totalQuestions, correctCount, corrections };
+          break;
+        }
+        
         default:
-          // Correction par défaut
           correctionResult = correctTextExercise();
           break;
       }
@@ -3178,6 +3294,244 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                 <p className="text-xs text-red-600">
                   Conseils : écoutez attentivement, notez les mots que vous comprenez, puis écoutez à nouveau.
                 </p>
+              </div>
+            )}
+
+            {/* ========================================================================
+                 NOUVEAUX EXERCICES : GENRE DES NOMS
+               ======================================================================== */}
+
+            {/* GENRE - Mode A : Choix du déterminant */}
+            {generatedExercise.type === 'genre' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Choisissez le bon article (der, die, das, die pluriel) pour chaque nom.
+                </p>
+
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.mots.map((mot: GenreWord, index: number) => {
+                    const userAnswer = genreAnswers[index];
+                    const isAnswered = userAnswer !== undefined;
+
+                    return (
+                      <div 
+                        key={index}
+                        className={`bg-white p-4 rounded-md shadow-sm border-2 transition-colors ${
+                          isAnswered ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <span className="text-xl">___</span>
+                          <span className="text-xl font-medium text-gray-800">{mot.nom}</span>
+                        </div>
+
+                        <p className="text-sm text-gray-600 mb-3">Traduction: {mot.traduction}</p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {['der', 'die', 'das', 'die (pluriel)'].map((article: string) => {
+                            const isSelected = userAnswer === article;
+                            return (
+                              <button
+                                key={article}
+                                onClick={() => {
+                                  setGenreAnswers(prev => ({
+                                    ...prev,
+                                    [index]: isSelected ? undefined : article
+                                  }));
+                                }}
+                                className={`px-4 py-2 rounded-md text-white font-medium transition-colors ${
+                                  isSelected
+                                    ? 'bg-blue-600'
+                                    : 'bg-blue-600 hover:bg-blue-700'
+                                }`}
+                              >
+                                {article}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="text-sm text-gray-500">
+                  {Object.keys(genreAnswers).length} réponses sur {generatedExercise.mots.length}
+                </div>
+              </div>
+            )}
+
+            {generatedExercise.type === 'genre_texte' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Complétez les trous avec le bon article (Der, Die, Das, Die).
+                </p>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.phrases.map((phrase: GenreTextPhrase, phraseIndex: number) => (
+                    <div key={phraseIndex} className="bg-white p-4 rounded-md shadow-sm">
+                      <p className="mb-3 font-medium text-gray-800">Phrase {phraseIndex + 1}</p>
+                      <div className="mb-4">
+                        {phrase.texte.split('___').map((part: string, partIndex: number) => {
+                          const trou = phrase.trous[partIndex];
+                          const userAnswer = genreTextAnswers[phraseIndex]?.[partIndex];
+                          if (partIndex === 0) return <span key={partIndex}>{part}</span>;
+                          return (
+                            <span key={partIndex}>
+                              <select
+                                value={userAnswer || ''}
+                                onChange={(e) => {
+                                  setGenreTextAnswers(prev => ({
+                                    ...prev,
+                                    [phraseIndex]: { ...prev[phraseIndex], [partIndex - 1]: e.target.value }
+                                  }));
+                                }}
+                                className="px-2 py-1 rounded border text-sm border-gray-300 bg-white"
+                              >
+                                <option value="">---</option>
+                                {trou?.options.map(option => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                              {part}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {getQuestionCount()} réponses sur {getQuestionCount()} questions
+                </div>
+              </div>
+            )}
+
+            {generatedExercise.type === 'identifier_fonction' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">Identifiez la fonction grammaticale du mot en évidence.</p>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.questions.map((q: IdentifyFunctionQuestion, index: number) => {
+                    const userAnswer = functionIdentificationAnswers[index];
+                    const phraseWithHtml = q.phrase.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    return (
+                      <div key={index} className="bg-white p-4 rounded-md shadow-sm border-2 border-gray-200">
+                        <p className="font-medium text-gray-800 mb-3" dangerouslySetInnerHTML={{ __html: phraseWithHtml }} />
+                        <p className="text-sm text-gray-600 mb-3">Mot: <strong>{q.motEnEvidence}</strong></p>
+                        <div className="flex flex-wrap gap-2">
+                          {q.choix.map(choice => {
+                            const isSelected = userAnswer === choice;
+                            return (
+                              <button
+                                key={choice}
+                                onClick={() => setFunctionIdentificationAnswers(prev => ({
+                                  ...prev, [index]: isSelected ? undefined : choice
+                                }))}
+                                className={`px-4 py-2 rounded-md text-white font-medium ${
+                                  isSelected ? 'bg-purple-600' : 'bg-purple-600 hover:bg-purple-700'
+                                }`}
+                              >
+                                {choice}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {Object.keys(functionIdentificationAnswers).length}/{generatedExercise.questions?.length || 0} réponses
+                </div>
+              </div>
+            )}
+
+            {generatedExercise.type === 'choisir_determinant' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">Choisissez le bon déterminant selon la fonction indiquée.</p>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+                  {generatedExercise.questions.map((q: ChooseDeterminantQuestion, index: number) => {
+                    const userAnswer = determinantChoiceAnswers[index];
+                    return (
+                      <div key={index} className="bg-white p-4 rounded-md shadow-sm border-2 border-gray-200">
+                        <p className="font-medium text-gray-800 mb-2">{q.phrase}</p>
+                        <p className="text-sm text-gray-600 mb-3">
+                          Fonction: <strong>{q.fonction}</strong> | Genre: <strong>{q.genre}</strong>
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {q.choix.map(choice => {
+                            const isSelected = userAnswer === choice;
+                            return (
+                              <button
+                                key={choice}
+                                onClick={() => setDeterminantChoiceAnswers(prev => ({
+                                  ...prev, [index]: isSelected ? undefined : choice
+                                }))}
+                                className={`px-4 py-2 rounded-md text-white font-medium ${
+                                  isSelected ? 'bg-teal-600' : 'bg-teal-600 hover:bg-teal-700'
+                                }`}
+                              >
+                                {choice}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {Object.keys(determinantChoiceAnswers).length}/{generatedExercise.questions?.length || 0} réponses
+                </div>
+              </div>
+            )}
+
+            {generatedExercise.type === 'tableau_declinaison' && (
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600">Complétez les cellules manquantes du tableau.</p>
+                <div className="overflow-x-auto bg-gray-50 p-4 rounded-md border border-gray-200">
+                  <table className="w-full border-collapse border border-gray-300 text-sm">
+                    <thead>
+                      <tr className="bg-[#3730a3] text-white">
+                        <th className="p-2 border border-gray-300">Cas / Genre</th>
+                        <th className="p-2 border border-gray-300">Nominatif</th>
+                        <th className="p-2 border border-gray-300">Accusatif</th>
+                        <th className="p-2 border border-gray-300">Datif</th>
+                        <th className="p-2 border border-gray-300">Génitif</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {generatedExercise.rows.map((row: DeclensionRow, rowIndex: number) => (
+                        <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}> 
+                          <td className="p-2 border border-gray-300 font-medium">{row.genre}</td>
+                          {['nominatif', 'accusatif', 'datif', 'genitif'].map(cas => {
+                            const cell = row[cas as 'nominatif' | 'accusatif' | 'datif' | 'genitif'];
+                            const userAnswer = declensionTableAnswers[row.genre]?.[cas];
+                            return (
+                              <td key={cas} className="p-2 border border-gray-300 text-center">
+                                {cell.isVisible ? (
+                                  <span className="font-medium text-gray-700">{cell.value}</span>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={userAnswer || ''}
+                                    onChange={(e) => setDeclensionTableAnswers(prev => ({
+                                      ...prev, [row.genre]: { ...prev[row.genre], [cas]: e.target.value }
+                                    }))}
+                                    className="w-full px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                                    placeholder="..."
+                                  />
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {getQuestionCount()} cellules sur {getQuestionCount()} trous
+                </div>
               </div>
             )}
 
