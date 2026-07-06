@@ -383,7 +383,8 @@ export default function ExercicesPage() {
   
   // État pour le sélecteur de thème
   const [themeSource, setThemeSource] = useState<ThemeSource>('cours');
-  const [selectedLecon, setSelectedLecon] = useState<Lecon | null>(null);
+  const [selectedLecons, setSelectedLecons] = useState<Lecon[]>([]);
+  const [leconFilter, setLeconFilter] = useState<'tous' | Lecon['type']>('tous');
   const [selectedTheme, setSelectedTheme] = useState<string>('Voyage');
   const [customTheme, setCustomTheme] = useState<string>('');
   
@@ -479,7 +480,7 @@ export default function ExercicesPage() {
     // Sélectionner une leçon aléatoire pour le mode 'cours'
     if (allLecons.length > 0) {
       const randomIndex = Math.floor(Math.random() * allLecons.length);
-      setSelectedLecon(allLecons[randomIndex]);
+      setSelectedLecons([allLecons[randomIndex]]);
     }
   }, []);
 
@@ -638,11 +639,18 @@ export default function ExercicesPage() {
    * Récupère le contexte/thème actuel
    */
   const getCurrentContext = useCallback((): { type: 'lecon' | 'theme'; value: string; title: string } => {
-    if (themeSource === 'cours' && selectedLecon) {
+    if (themeSource === 'cours' && selectedLecons.length > 0) {
+      // Concaténer les contenus des leçons sélectionnées
+      const leconsContent = selectedLecons.map(lecon => 
+        `[Leçon - ${lecon.titre}] : ${lecon.contenuTexte}`
+      ).join('\n\n');
+      
+      const leconsTitles = selectedLecons.map(l => l.titre).join(', ');
+      
       return {
         type: 'lecon',
-        value: selectedLecon.contenuTexte,
-        title: `Basé sur : ${selectedLecon.titre}`,
+        value: leconsContent,
+        title: `Basé sur : ${leconsTitles}`,
       };
     } else {
       const finalTheme = customTheme.trim() || selectedTheme;
@@ -652,7 +660,7 @@ export default function ExercicesPage() {
         title: `Thème : ${finalTheme}`,
       };
     }
-  }, [themeSource, selectedLecon, selectedTheme, customTheme]);
+  }, [themeSource, selectedLecons, selectedTheme, customTheme]);
 
   // ==========================================================================
   // GÉNÉRATION D'EXERCICE
@@ -686,8 +694,9 @@ Chaque question doit avoir :
 - La bonne réponse indiquée par son INDEX (0, 1, 2 ou 3)
 - Une explication pédagogique en français
 
-Réponds avec UN SEUL objet JSON contenant UN tableau "questions" avec EXACTEMENT 20 éléments :
+Réponds avec UN SEUL objet JSON contenant :
 {
+  "exercice": "qcm",
   "questions": [
     {
       "question": "[question en allemand]",
@@ -699,7 +708,9 @@ Réponds avec UN SEUL objet JSON contenant UN tableau "questions" avec EXACTEMEN
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Le tableau doit contenir EXACTEMENT 20 questions.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "qcm".`;
     }
     
     if (type === 'texteATrous') {
@@ -710,16 +721,18 @@ Crée un exercice de texte à trous basé sur le contenu ci-dessus.
 - Le niveau doit correspondre à ${niveauCECRL}
 - Les trous doivent porter sur des notions importantes
 
-Réponds avec un JSON contenant :
+Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "texteATrous",
-    "question": "[consigne en français]",
-    "textWithBlanks": "[texte avec des _____ pour les trous]",
-    "correctAnswer": ["mot1", "mot2", ...],
-    "explanation": "[explication en français]"
-  }
-}`;
+  "exercice": "texteATrous",
+  "question": "[consigne en français]",
+  "textWithBlanks": "[texte avec des _____ pour les trous]",
+  "correctAnswer": ["mot1", "mot2", ...],
+  "explanation": "[explication en français]"
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "texteATrous".`;
     }
 
     if (type === 'traduction') {
@@ -732,16 +745,16 @@ Crée un exercice de traduction basé sur le contenu ci-dessus.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "traduction",
-    "sentence": "[phrase à traduire]",
-    "direction": "${translationDirection}",
-    "correctTranslation": "[traduction correcte]",
-    "context": "[contexte optionnel en français]"
-  }
+  "exercice": "traduction",
+  "sentence": "[phrase à traduire]",
+  "direction": "${translationDirection}",
+  "correctTranslation": "[traduction correcte]",
+  "context": "[contexte optionnel en français]"
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "traduction".`;
     }
 
     if (type === 'questionsOuvertes') {
@@ -758,15 +771,15 @@ Exemples de questions :
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "questionsOuvertes",
-    "question": "[question en allemand]",
-    "expectedAnswer": "[réponse attendue en allemand]",
-    "difficulty": "${niveauCECRL}"
-  }
+  "exercice": "questionsOuvertes",
+  "question": "[question en allemand]",
+  "expectedAnswer": "[réponse attendue en allemand]",
+  "difficulty": "${niveauCECRL}"
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "questionsOuvertes".`;
     }
 
     if (type === 'remiseEnOrdre') {
@@ -779,16 +792,16 @@ Crée un exercice de remise en ordre (Satzstellung) basé sur le contenu ci-dess
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "remiseEnOrdre",
-    "words": ["[mot1]", "[mot2]", "[mot3]", ...],
-    "correctOrder": ["[mot1]", "[mot2]", "[mot3]", ...],
-    "sentence": "[phrase complète correcte]",
-    "grammaticalRule": "[explication de la règle grammaticale en français]"
-  }
+  "exercice": "remiseEnOrdre",
+  "words": ["[mot1]", "[mot2]", "[mot3]", ...],
+  "correctOrder": ["[mot1]", "[mot2]", "[mot3]", ...],
+  "sentence": "[phrase complète correcte]",
+  "grammaticalRule": "[explication de la règle grammaticale en français]"
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "remiseEnOrdre".`;
     }
 
     if (type === 'conjugaison') {
@@ -801,17 +814,17 @@ Crée un exercice de conjugaison basé sur le contenu ci-dessus.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "conjugaison",
-    "verb": "[verbe à l'infinitif]",
-    "pronoun": "[pronom]",
-    "tense": "[temps en allemand]",
-    "correctForm": "[forme conjuguée correcte]",
-    "ruleExplanation": "[explication de la règle en français]"
-  }
+  "exercice": "conjugaison",
+  "verb": "[verbe à l'infinitif]",
+  "pronoun": "[pronom]",
+  "tense": "[temps en allemand]",
+  "correctForm": "[forme conjuguée correcte]",
+  "ruleExplanation": "[explication de la règle en français]"
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "conjugaison".`;
     }
 
     if (type === 'completionDialogue') {
@@ -824,19 +837,19 @@ Crée un exercice de complétion de dialogue basé sur le contenu ci-dessus.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "completionDialogue",
-    "dialogue": [
-      {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
-      {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"},
-      {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
-      {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"}
-    ],
-    "context": "[contexte du dialogue en français]"
-  }
+  "exercice": "completionDialogue",
+  "dialogue": [
+    {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
+    {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"},
+    {"speaker": "A", "text": "[réplique de A]", "isBlank": false},
+    {"speaker": "B", "text": "", "isBlank": true, "expectedAnswer": "[réponse attendue]"}
+  ],
+  "context": "[contexte du dialogue en français]"
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "completionDialogue".`;
     }
 
     if (type === 'association') {
@@ -849,15 +862,16 @@ Crée un exercice d'association (Zuordnung) basé sur le contenu ci-dessus.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "association",
-    "leftColumn": ["[mot1]", "[mot2]", "[mot3]", "[mot4]"],
-    "rightColumn": ["[définition1]", "[définition2]", "[définition3]", "[définition4]"],
-    "correctPairs": [[0, 0], [1, 1], [2, 2], [3, 3]]
-  }
+  "exercice": "association",
+  "leftColumn": ["[mot1]", "[mot2]", "[mot3]", "[mot4]"],
+  "rightColumn": ["[définition1]", "[définition2]", "[définition3]", "[définition4]"],
+  "correctPairs": [[0, 0], [1, 1], [2, 2], [3, 3]]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire. Les paires correctes doivent être des tableaux [index_gauche, index_droit].`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "association".
+Les paires correctes doivent être des tableaux [index_gauche, index_droit].`;
     }
 
     if (type === 'dictee') {
@@ -869,14 +883,14 @@ Crée un exercice de dictée (Diktat) basé sur le contenu ci-dessus.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "exercise": {
-    "type": "dictee",
-    "sentence": "[phrase à dicter]",
-    "words": ["[mot1]", "[mot2]", ...]
-  }
+  "exercice": "dictee",
+  "sentence": "[phrase à dicter]",
+  "words": ["[mot1]", "[mot2]", ...]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "dictee".`;
     }
 
     // ==========================================================================
@@ -905,7 +919,10 @@ Réponds avec UN SEUL objet JSON contenant :
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 10 mots.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "genre".
+Le tableau doit contenir EXACTEMENT 10 mots.`;
     }
 
     if (type === 'genre_texte') {
@@ -931,7 +948,9 @@ Réponds avec UN SEUL objet JSON contenant :
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "genre_texte".`;
     }
 
     // ==========================================================================
@@ -949,7 +968,7 @@ Crée un exercice pour identifier la fonction grammaticale des mots en allemand.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "type": "identifier_fonction",
+  "exercice": "identifier_fonction",
   "questions": [
     {
       "phrase": "Ich gebe **dem Mann** ein Buch.",
@@ -963,13 +982,15 @@ Réponds avec UN SEUL objet JSON contenant :
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "identifier_fonction".`;
     }
 
     if (type === 'choisir_determinant') {
       return `${basePrompt}
 Crée un exercice pour choisir le bon déterminant selon la fonction grammaticale.
-- Génère 5-8 questions
+- Génères 5-8 questions
 - Chaque question contient une phrase avec un trou pour un article/déterminant
 - Indique la fonction du mot manquant (ex: "COD (Accusatif)") et son genre
 - Fournis 4 options de réponse (ex: der, den, dem, des)
@@ -977,7 +998,7 @@ Crée un exercice pour choisir le bon déterminant selon la fonction grammatical
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "type": "choisir_determinant",
+  "exercice": "choisir_determinant",
   "questions": [
     {
       "phrase": "Ich sehe ___ Mann.",
@@ -991,7 +1012,9 @@ Réponds avec UN SEUL objet JSON contenant :
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "choisir_determinant".`;
     }
 
     if (type === 'tableau_declinaison') {
@@ -1003,7 +1026,7 @@ Crée un exercice de tableau de déclinaison interactif.
 
 Réponds avec UN SEUL objet JSON contenant :
 {
-  "type": "tableau_declinaison",
+  "exercice": "tableau_declinaison",
   "rows": [
     {
       "genre": "Masculin",
@@ -1036,7 +1059,9 @@ Réponds avec UN SEUL objet JSON contenant :
   ]
 }
 
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+IMPORTANT : Réponds UNIQUEMENT avec le JSON demandé.
+Pas de texte avant, pas de texte après, pas de markdown.
+Le JSON doit contenir une clé 'exercice' à la racine avec la valeur "tableau_declinaison".`;
     }
     
     // Pour les autres types
@@ -1048,8 +1073,8 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
    * Génère un exercice via l'API Mistral
    */
   const generateExercise = useCallback(async () => {
-    if ((themeSource === 'cours' && !selectedLecon) || (themeSource === 'libre' && !selectedTheme && !customTheme)) {
-      setError('Veuillez sélectionner une leçon ou un thème');
+    if ((themeSource === 'cours' && selectedLecons.length === 0) || (themeSource === 'libre' && !selectedTheme && !customTheme)) {
+      setError('Veuillez sélectionner au moins une leçon ou un thème');
       return;
     }
 
@@ -1078,42 +1103,54 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
 
       const data = await response.json();
       
+      // Logger la réponse brute en cas d'erreur pour le debug
+      console.log('Réponse Mistral brute:', data);
+      
+      // Vérifier que la réponse contient la clé 'exercice' à la racine
+      if (!data.exercice) {
+        console.error('Réponse Mistral invalide : clé "exercice" manquante', data);
+        throw new Error(`Réponse Mistral invalide : clé 'exercice' manquante. Reçu : ${JSON.stringify(data).substring(0, 200)}`);
+      }
+      
+      // Vérifier que le type correspond
+      if (data.exercice !== selectedType) {
+        console.error(`Type d'exercice incompatible : attendu '${selectedType}', reçu '${data.exercice}'`, data);
+        throw new Error(`Type d'exercice incompatible : attendu '${selectedType}', reçu '${data.exercice}'`);
+      }
+
       // Parser selon le type
       let exercise: GeneratedExercise;
-      
-      if (selectedType === 'qcm') {
-        // Attendre un tableau de questions
-        if (!data.questions || !Array.isArray(data.questions) || data.questions.length !== 20) {
-          throw new Error(`Réponse Mistral invalide : attendu 20 questions, reçu ${data.questions?.length || 0}`);
-        }
-        
-        // Valider chaque question
-        const validQuestions = data.questions.map((q: any, index: number) => {
-          if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
-              q.bonneReponse === undefined || q.bonneReponse === null) {
-            throw new Error(`Question ${index + 1} invalide`);
+      const exerciseData = data;
+
+      switch (selectedType) {
+        case 'qcm':
+          // Attendre un tableau de questions
+          if (!exerciseData.questions || !Array.isArray(exerciseData.questions) || exerciseData.questions.length !== 20) {
+            console.error('Réponse Mistral invalide pour QCM:', exerciseData);
+            throw new Error(`Réponse Mistral invalide : attendu 20 questions pour QCM, reçu ${exerciseData.questions?.length || 0}`);
           }
-          return {
-            question: String(q.question),
-            choix: q.choix.map((c: any) => String(c)),
-            bonneReponse: Number(q.bonneReponse),
-            explication: String(q.explication || ''),
+          
+          // Valider chaque question
+          const validQuestions = exerciseData.questions.map((q: any, index: number) => {
+            if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
+                q.bonneReponse === undefined || q.bonneReponse === null) {
+              console.error(`Question QCM ${index + 1} invalide:`, q);
+              throw new Error(`Question ${index + 1} invalide pour QCM`);
+            }
+            return {
+              question: String(q.question),
+              choix: q.choix.map((c: any) => String(c)),
+              bonneReponse: Number(q.bonneReponse),
+              explication: String(q.explication || ''),
+            };
+          });
+          
+          exercise = {
+            type: 'qcm',
+            questions: validQuestions,
           };
-        });
-        
-        exercise = {
-          type: 'qcm',
-          questions: validQuestions,
-        };
-      } else {
-        // Texte à trous ou autres types
-        if (!data.exercise) {
-          throw new Error('Réponse Mistral invalide : exercice manquant');
-        }
+          break;
 
-        const exerciseData = data.exercise;
-
-        switch (selectedType) {
           case 'texteATrous':
             exercise = {
               type: 'texteATrous',
@@ -1333,7 +1370,6 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
           default:
             throw new Error(`Type d'exercice non implémenté : ${selectedType}`);
         }
-      }
 
       setGeneratedExercise(exercise);
       setStep('answering');
@@ -1345,7 +1381,7 @@ Crée un exercice de type ${type}. Réponds avec un JSON valide.`;
       setStep('select');
       setIsLoading(false);
     }
-  }, [selectedType, buildExercisePrompt, themeSource, selectedLecon, selectedTheme, customTheme]);
+  }, [selectedType, buildExercisePrompt, themeSource, selectedLecons, selectedTheme, customTheme]);
 
   // ==========================================================================
   // CORRECTION
@@ -2142,7 +2178,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       // Sauvegarder via storage
       const newExercice = addExercice({
         type: generatedExercise.type,
-        leconsAssociees: themeSource === 'cours' && selectedLecon ? [selectedLecon.id] : [],
+        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [],
         contenuJSON,
         reponseUtilisateur,
         correction: correctionText,
@@ -2161,7 +2197,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
   }, [
     generatedExercise, 
     correction, 
-    selectedLecon, 
+    selectedLecons, 
     qcmAnswers, 
     textAnswer, 
     themeSource,
@@ -2415,7 +2451,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                   onChange={(e) => {
                     setThemeSource(e.target.value as ThemeSource);
                     const lecon = selectRandomLecon();
-                    if (lecon) setSelectedLecon(lecon);
+                    if (lecon) setSelectedLecons([lecon]);
                   }}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                 />
@@ -2436,33 +2472,172 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
 
             {/* Option A : Basé sur mes cours */}
             {themeSource === 'cours' && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-medium text-gray-800">Leçon sélectionnée</h3>
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium text-gray-800">Sélectionner les leçons à travailler</h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (lecons.length > 0) {
+                          setSelectedLecons([...lecons]);
+                        }
+                      }}
+                      className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
+                    >
+                      Tout sélectionner
+                    </button>
+                    <button
+                      onClick={() => setSelectedLecons([])}
+                      className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-medium transition-colors"
+                    >
+                      Tout désélectionner
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (lecons.length > 0) {
+                          const randomIndex = Math.floor(Math.random() * lecons.length);
+                          setSelectedLecons([lecons[randomIndex]]);
+                        }
+                      }}
+                      className="px-3 py-1 bg-[#3730a3]/10 text-[#3730a3] rounded-xl hover:bg-[#3730a3]/20 text-sm font-medium transition-all duration-200"
+                    >
+                      🔄 Choisir aléatoirement
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filtre par type */}
+                <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => {
-                      const lecon = selectRandomLecon();
-                      if (lecon) setSelectedLecon(lecon);
-                    }}
-                    className="px-3 py-1 bg-[#3730a3]/10 text-[#3730a3] rounded-xl hover:bg-[#3730a3]/20 text-sm font-medium transition-all duration-200"
+                    onClick={() => setLeconFilter('tous')}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      leconFilter === 'tous' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
                   >
-                    🔄 Choisir aléatoirement
+                    Tous
+                  </button>
+                  <button
+                    onClick={() => setLeconFilter('grammaire')}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      leconFilter === 'grammaire' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Grammaire
+                  </button>
+                  <button
+                    onClick={() => setLeconFilter('vocabulaire')}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      leconFilter === 'vocabulaire' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Vocabulaire
+                  </button>
+                  <button
+                    onClick={() => setLeconFilter('conjugaison')}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      leconFilter === 'conjugaison' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Conjugaison
+                  </button>
+                  <button
+                    onClick={() => setLeconFilter('autre')}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      leconFilter === 'autre' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Autre
                   </button>
                 </div>
-                
-                {selectedLecon ? (
-                  <div className="space-y-2">
-                    <p className="font-medium text-gray-700">
-                      {selectedLecon.titre} <span className="text-sm text-gray-500">({selectedLecon.type})</span>
+
+                {/* Liste des leçons avec cases à cocher */}
+                <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md">
+                  {lecons.filter(lecon => leconFilter === 'tous' || lecon.type === leconFilter).length === 0 ? (
+                    <p className="text-gray-500 text-sm p-4">
+                      Aucune leçon disponible. Importez un PDF via <a href="/lecons/import" className="text-blue-600 hover:underline">/lecons/import</a>
                     </p>
-                    <p className="text-sm text-gray-600 line-clamp-2">
-                      {selectedLecon.contenuTexte}
+                  ) : (
+                    lecons
+                      .filter(lecon => leconFilter === 'tous' || lecon.type === leconFilter)
+                      .map((lecon) => {
+                        const isSelected = selectedLecons.some(l => l.id === lecon.id);
+                        
+                        // Badge coloré selon le type
+                        const getTypeColor = (type: Lecon['type']) => {
+                          switch (type) {
+                            case 'grammaire': return 'bg-blue-100 text-blue-700';
+                            case 'vocabulaire': return 'bg-green-100 text-green-700';
+                            case 'conjugaison': return 'bg-purple-100 text-purple-700';
+                            case 'autre': return 'bg-gray-100 text-gray-700';
+                            default: return 'bg-gray-100 text-gray-700';
+                          }
+                        };
+
+                        return (
+                          <label
+                            key={lecon.id}
+                            className={`flex items-start gap-3 p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer transition-colors ${
+                              isSelected ? 'bg-blue-50' : ''
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedLecons([...selectedLecons, lecon]);
+                                } else {
+                                  setSelectedLecons(selectedLecons.filter(l => l.id !== lecon.id));
+                                }
+                              }}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 mt-1"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-start">
+                                <p className="font-medium text-gray-800 truncate">{lecon.titre}</p>
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(lecon.type)}`}>
+                                  {lecon.type}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {lecon.contenuTexte.substring(0, 50)}{lecon.contenuTexte.length > 50 ? '...' : ''}
+                              </p>
+                            </div>
+                          </label>
+                        );
+                      })
+                  )}
+                </div>
+
+                {/* Compteur */}
+                <p className="text-sm text-gray-600">
+                  {selectedLecons.length} leçon(s) sélectionnée(s)
+                </p>
+
+                {/* Aperçu des leçons sélectionnées */}
+                {selectedLecons.length > 0 && (
+                  <div className="bg-white rounded-lg p-3 space-y-2">
+                    <p className="text-sm font-medium text-gray-700">
+                      Leçons sélectionnées :
                     </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedLecons.map(lecon => (
+                        <span key={lecon.id} className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                          {lecon.titre}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">
-                    Aucune leçon disponible. Importez un PDF via <a href="/lecons/import" className="text-blue-600 hover:underline">/lecons/import</a>
-                  </p>
                 )}
               </div>
             )}
@@ -2605,12 +2780,12 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             )}
 
             {/* Bouton de génération */}
-            {(themeSource === 'cours' && !selectedLecon) ? (
+            {(themeSource === 'cours' && selectedLecons.length === 0) ? (
               <button
                 className="w-full px-6 py-3 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed"
                 disabled
               >
-                Veuillez importer une leçon d\'abord
+                Veuillez sélectionner au moins une leçon
               </button>
             ) : (
               <button
@@ -3908,7 +4083,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       // Sauvegarder l'exercice
                       const newExercice = addExercice({
                         type: generatedExercise.type,
-                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [selectedTheme],
                         contenuJSON: {
                           mots: generatedExercise.mots,
                           answers: genreAnswers
@@ -4029,7 +4204,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       // Sauvegarder l'exercice
                       const newExercice = addExercice({
                         type: generatedExercise.type,
-                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [selectedTheme],
                         contenuJSON: {
                           phrases: generatedExercise.phrases,
                           answers: genreTextAnswers
@@ -4153,7 +4328,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       // Sauvegarder l'exercice
                       const newExercice = addExercice({
                         type: generatedExercise.type,
-                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [selectedTheme],
                         contenuJSON: {
                           questions: generatedExercise.questions,
                           answers: functionIdentificationAnswers
@@ -4268,7 +4443,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       // Sauvegarder l'exercice
                       const newExercice = addExercice({
                         type: generatedExercise.type,
-                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [selectedTheme],
                         contenuJSON: {
                           questions: generatedExercise.questions,
                           answers: determinantChoiceAnswers
@@ -4386,7 +4561,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
                       // Sauvegarder l'exercice
                       const newExercice = addExercice({
                         type: generatedExercise.type,
-                        leconsAssociees: [selectedLecon?.id || selectedTheme],
+                        leconsAssociees: themeSource === 'cours' ? selectedLecons.map(l => l.id) : [selectedTheme],
                         contenuJSON: {
                           rows: generatedExercise.rows,
                           answers: declensionTableAnswers
