@@ -78,30 +78,6 @@ export default function DashboardPage() {
   const [badgesDebloques, setBadgesDebloques] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Réinitialisation automatique au premier chargement (data migration)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Vérifier si la clé dataVersion existe
-      if (!localStorage.getItem('dataVersion')) {
-        // Réinitialiser les résultats existants
-        localStorage.removeItem('exercices');
-        localStorage.removeItem('evaluations');
-        localStorage.removeItem('progression');
-        localStorage.setItem('exercices', JSON.stringify([]));
-        localStorage.setItem('evaluations', JSON.stringify([]));
-        localStorage.setItem('progression', JSON.stringify({
-          historiqueScores: [],
-          niveauEstimeCECRL: 'A1',
-          justificationMistral: '',
-          streak: 0,
-          dernierAcces: '',
-        }));
-        // Définir la version des données
-        localStorage.setItem('dataVersion', '1.0');
-      }
-    }
-  }, []);
-
   // Charger les données au montage
   useEffect(() => {
     const loadData = () => {
