@@ -1337,66 +1337,56 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
         return Math.round(poids * 100) / 100;
       });
 
-      const prompt = `Tu es un professeur d'allemand. Crée un test global complet pour évaluer toutes les compétences d'un élève.
-
----
-Contexte: L'élève a étudié les leçons suivantes :
-${leconsContext.map(l => `- ${l.titre} (mots-clés: ${l.notionsCles.slice(0, 5).join(', ')})`).join('\n')}
-
-Niveau actuel estimé: ${progression.niveauEstimeCECRL || 'A1'}
-Poids par leçon: ${poidsParLecon.map((p, i) => `${lecons[i].titre}: ${p}`).join(', ')}
-
----
-
-Crée EXACTEMENT 10 questions variées avec la répartition suivante :
-- 5 questions QCM
-- 3 questions de production écrite
-- 2 questions d'expression orale
-
-Les questions doivent couvrir tous les critères CECRL :
-- comprehensionEcrite (compréhension écrite)
-- comprehensionOrale (compréhension orale)
-- expressionEcrite (expression écrite)
-- expressionOrale (expression orale)
-
-Pour les QCM :
-- type: "qcm"
-- critere: un des 4 critères ci-dessus
-- question: question en allemand
-- choix: 4 réponses (1 correcte, 3 incorrectes)
-- bonneReponse: index (0-3)
-- explication: explication en français
-
-Pour les productions écrites :
-- type: "production"
-- critere: "expressionEcrite"
-- consigne: consigne en allemand (ex: "Schreiben Sie 3-4 Sätze über...")
-- correctionCriteres: ["grammaire", "vocabulaire", "structure"]
-
-Pour les oraux :
-- type: "oral"
-- critere: "expressionOrale"
-- consigne: consigne en allemand (ex: "Sprechen Sie 1 Minute über...")
-- correctionCriteres: ["prononciation", "vocabulaire", "fluidite"]
-
-Donne plus de poids aux leçons anciennes et non testées dans tes questions.
-
-Réponds avec UN SEUL objet JSON :
-{
-  "questions": [
-    {
-      "type": "qcm",
-      "critere": "comprehensionEcrite",
-      "question": "...",
-      "choix": ["A", "B", "C", "D"],
-      "bonneReponse": 0,
-      "explication": "..."
-    },
-    ... (9 autres questions)
-  ]
-}
-
-IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 10 questions.`;
+      const prompt = 
+        "Tu es un professeur d'allemand. Crée un test global complet pour évaluer toutes les compétences d'un élève.\n\n" +
+        "---\n" +
+        "Contexte: L'élève a étudié les leçons suivantes :\n" +
+        leconsContext.map(l => `- ${l.titre} (mots-clés: ${l.notionsCles.slice(0, 5).join(', ')})`).join('\n') + "\n\n" +
+        "Niveau actuel estimé: " + (progression.niveauEstimeCECRL || 'A1') + "\n" +
+        "Poids par leçon: " + poidsParLecon.map((p, i) => `${lecons[i].titre}: ${p}`).join(', ') + "\n\n" +
+        "---\n\n" +
+        "Crée EXACTEMENT 10 questions variées avec la répartition suivante :\n" +
+        "- 5 questions QCM\n" +
+        "- 3 questions de production écrite\n" +
+        "- 2 questions d'expression orale\n\n" +
+        "Les questions doivent couvrir tous les critères CECRL :\n" +
+        "- comprehensionEcrite (compréhension écrite)\n" +
+        "- comprehensionOrale (compréhension orale)\n" +
+        "- expressionEcrite (expression écrite)\n" +
+        "- expressionOrale (expression orale)\n\n" +
+        "Pour les QCM :\n" +
+        "- type: \"qcm\"\n" +
+        "- critere: un des 4 critères ci-dessus\n" +
+        "- question: question en allemand\n" +
+        "- choix: 4 réponses (1 correcte, 3 incorrectes)\n" +
+        "- bonneReponse: index (0-3)\n" +
+        "- explication: explication en français\n\n" +
+        "Pour les productions écrites :\n" +
+        "- type: \"production\"\n" +
+        "- critere: \"expressionEcrite\"\n" +
+        "- consigne: consigne en allemand (ex: \"Schreiben Sie 3-4 Sätze über...\")\n" +
+        "- correctionCriteres: [\"grammaire\", \"vocabulaire\", \"structure\"]\n\n" +
+        "Pour les oraux :\n" +
+        "- type: \"oral\"\n" +
+        "- critere: \"expressionOrale\"\n" +
+        "- consigne: consigne en allemand (ex: \"Sprechen Sie 1 Minute über...\")\n" +
+        "- correctionCriteres: [\"prononciation\", \"vocabulaire\", \"fluidite\"]\n\n" +
+        "Donne plus de poids aux leçons anciennes et non testées dans tes questions.\n\n" +
+        "Réponds avec UN SEUL objet JSON :\n" +
+        "{\n" +
+        "  \"questions\": [\n" +
+        "    {\n" +
+        "      \"type\": \"qcm\",\n" +
+        "      \"critere\": \"comprehensionEcrite\",\n" +
+        "      \"question\": \"...\",\n" +
+        "      \"choix\": [\"A\", \"B\", \"C\", \"D\"],\n" +
+        "      \"bonneReponse\": 0,\n" +
+        "      \"explication\": \"...\"\n" +
+        "    },\n" +
+        "    ... (9 autres questions)\n" +
+        "  ]\n" +
+        "}\n\n" +
+        "IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMENT 10 questions.";
 
       const response = await fetch('/api/mistral', {
         method: 'POST',
