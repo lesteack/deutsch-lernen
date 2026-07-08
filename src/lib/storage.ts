@@ -83,6 +83,9 @@ export type CritereEvaluation =
 /** Type pour la portée d'évaluation */
 export type PorteeEvaluation = 'sequence' | 'global';
 
+/** Type pour le mode d'évaluation */
+export type ModeEvaluation = 'cours' | 'niveau';
+
 /** Type pour une évaluation */
 export interface Evaluation {
   id: string;
@@ -91,6 +94,7 @@ export interface Evaluation {
   sequenceCible?: string; // optionnel, id de Chapitre/Lecon
   scoreGlobal: number; // 0-100
   dateRealisation: string;
+  modeEvaluation?: ModeEvaluation; // 'cours' ou 'niveau'
 }
 
 /** Type pour un texte support */
@@ -153,6 +157,10 @@ export interface SuiviProgression {
   justificationMistral: string; // texte explicatif généré par Mistral
   streak: number; // nombre de jours consécutifs d'utilisation
   dernierAcces: string;
+  // Niveau officiel basé sur les évaluations de niveau
+  niveauOfficielCECRL?: NiveauCECRL;
+  dateEvaluationOfficielle?: string;
+  justificationOfficielle?: string;
 }
 
 // ============================================================================
@@ -495,6 +503,9 @@ export function createEmptyProgression(): SuiviProgression {
     justificationMistral: '',
     streak: 0,
     dernierAcces: '',
+    niveauOfficielCECRL: undefined,
+    dateEvaluationOfficielle: undefined,
+    justificationOfficielle: undefined,
   };
 }
 
@@ -987,6 +998,44 @@ export function updateNiveauCECRL(niveau: NiveauCECRL, justification: string): S
     niveauEstimeCECRL: niveau,
     justificationMistral: justification,
   };
+  setProgression(updated);
+  return updated;
+}
+
+/**
+ * Estime le niveau CECRL officiel basé sur les scores d'évaluation
+ * @param scores - Objet avec les scores par critère (0-100)
+ * @param justification - Justification générée par Mistral
+ */
+export function estimerNiveauCECRL(scores: Record<CritereEvaluation, number>, justification: string): SuiviProgression {
+  const progression = getProgression();
+  
+  // Calculer la moyenne des scores
+  const scoreMoyen = Object.values(scores).reduce((sum, score) => sum + score, 0) / Object.values(scores).length;
+  
+  // Déterminer le niveau basé sur la moyenne
+  let niveauOfficiel: NiveauCECRL;
+  if (scoreMoyen >= 90) {
+    niveauOfficiel = 'C2';
+  } else if (scoreMoyen >= 75) {
+    niveauOfficiel = 'C1';
+  } else if (scoreMoyen >= 60) {
+    niveauOfficiel = 'B2';
+  } else if (scoreMoyen >= 45) {
+    niveauOfficiel = 'B1';
+  } else if (scoreMoyen >= 30) {
+    niveauOfficiel = 'A2';
+  } else {
+    niveauOfficiel = 'A1';
+  }
+  
+  const updated: SuiviProgression = {
+    ...progression,
+    niveauOfficielCECRL: niveauOfficiel,
+    dateEvaluationOfficielle: formatDate(),
+    justificationOfficielle: justification,
+  };
+  
   setProgression(updated);
   return updated;
 }

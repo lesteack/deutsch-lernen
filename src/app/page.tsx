@@ -77,6 +77,20 @@ export default function DashboardPage() {
   });
   const [badgesDebloques, setBadgesDebloques] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showOfficialEvaluationPrompt, setShowOfficialEvaluationPrompt] = useState(false);
+
+  // Vérifier si une évaluation officielle est nécessaire
+  useEffect(() => {
+    if (progression) {
+      // Vérifier si niveauOfficielCECRL existe et si la date est récente
+      const hasRecentOfficialEvaluation = progression.niveauOfficielCECRL && 
+                                         progression.dateEvaluationOfficielle &&
+                                         new Date(progression.dateEvaluationOfficielle) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Afficher la suggestion si pas d'évaluation officielle ou si elle a plus de 7 jours
+      setShowOfficialEvaluationPrompt(!hasRecentOfficialEvaluation);
+    }
+  }, [progression]);
 
   // Charger les données au montage
   useEffect(() => {

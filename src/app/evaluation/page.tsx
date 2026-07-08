@@ -7,12 +7,15 @@ import {
   getProgression,
   addEvaluation,
   getEvaluations,
+  updateNiveauCECRL,
+  estimerNiveauCECRL,
   type Lecon,
   type TexteSupport,
   type TexteSupportType,
   type Evaluation,
   type CritereEvaluation,
   type NiveauCECRL,
+  type ModeEvaluation,
 } from '@/lib/storage';
 import { mettreAJourProgression } from '@/lib/progression';
 import { predefinedThemes } from '@/lib/themes';
@@ -199,6 +202,8 @@ export default function EvaluationPage() {
   
   // État pour la source du thème
   const [themeSource, setThemeSource] = useState<ThemeSource>('cours');
+  // État pour le mode d'évaluation (cours ou niveau)
+  const [modeEvaluation, setModeEvaluation] = useState<ModeEvaluation>('cours');
   const [selectedLecon, setSelectedLecon] = useState<Lecon | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<string>('Voyage');
   const [customTheme, setCustomTheme] = useState<string>('');
@@ -355,7 +360,26 @@ export default function EvaluationPage() {
     try {
       let prompt: string;
 
-      if (context.type === 'lecon') {
+      if (modeEvaluation === 'niveau') {
+        // Mode évaluation de niveau - contenu standardisé
+        prompt = `Tu es un professeur d'allemand. Génère un contenu d'évaluation standardisé de niveau ${niveauCECRL} en allemand, sans tenir compte des leçons spécifiques de l'apprenant. Ce contenu sert à évaluer le niveau CECRL objectivement.
+
+Le texte doit :
+- Contenir 150-200 mots
+- Être adapté au niveau ${niveauCECRL}
+- Être un texte authentique et pédagogique
+- Couvrir des thèmes génériques (vie quotidienne, travail, société, etc.)
+- Ne pas utiliser de vocabulaire trop spécifique à une leçon particulière
+
+Réponds avec UN SEUL objet JSON :
+{
+  "texte": "[texte en allemand original]",
+  "titre": "[titre en français]",
+  "vocabulaireCle": ["mot1", "mot2", "mot3", ...]
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
+      } else if (context.type === 'lecon') {
         // Basé sur le vocabulaire de la leçon
         const vocabulaire = context.vocabulaire?.join(', ') || '';
         prompt = `Tu es un professeur d'allemand. Crée un NOUVEAU texte en allemand de 150-200 mots pour un élève de niveau ${niveauCECRL}.
@@ -448,7 +472,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       setStep('setup');
       setIsLoading(false);
     }
-  }, [getCurrentContext, niveauCECRL, selectedLecon]);
+  }, [getCurrentContext, niveauCECRL, selectedLecon, modeEvaluation]);
 
   // ==========================================================================
   // TRADUCTION DU VOCABULAIRE
@@ -598,7 +622,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON. Le tableau doit contenir EXACTEMEN
       const data = await response.json();
       
       // Valider la réponse
-      if (!data.questions || !Array.isArray(data.questions) || data.questions.length !== 5) {
+      if (!data.questions || !Array.isArray(data.questions) || data.questions.length < 1) {
         throw new Error(`Réponse Mistral invalide : attendu 5 questions, reçu ${data.questions?.length || 0}`);
       }
 
@@ -1301,8 +1325,124 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
     setGlobalTestState('generating');
 
     try {
-      const lecons = getAllLecons();
       const progression = getProgression();
+      
+      if (modeEvaluation === 'niveau') {
+        // Mode test de niveau officiel - test standardisé
+        const prompt = 
+          "Tu es un professeur d'allemand. Génère un test de niveau d'allemand complet et objectif, indépendant de tout cours spécifique.\n\n" +
+          "Le test doit couvrir :\n" +
+          "- 3 questions de compréhension écrite (texte authentique niveau " + (progression.niveauEstimeCECRL || 'A1') + ")\n" +
+          "- 3 questions de compréhension orale (texte à lire par TTS)\n" +
+          "- 2 productions écrites (sujets standards)\n" +
+          "- 2 productions orales\n\n" +
+          "Adapte la difficulté au niveau estimé actuel : " + (progression.niveauEstimeCECRL || 'A1') + ".\n\n" +
+          "Format JSON : {\n" +
+          "  \"questions\": [\n" +
+          "    {\n" +
+          "      \"type\": \"qcm\",\n" +
+          "      \"critere\": \"comprehensionEcrite\" | \"comprehensionOrale\" | \"expressionEcrite\" | \"expressionOrale\",\n" +
+          "      \"question\": \"[question en allemand]\",\n" +
+          "      \"choix\": [\"choix A\", \"choix B\", \"choix C\", \"choix D\"],\n" +
+          "      \"bonneReponse\": 0,\n" +
+          "      \"explication\": \"[explication en français]\"\n" +
+          "    },\n" +
+          "    {\n" +
+          "      \"type\": \"production\",\n" +
+          "      \"critere\": \"expressionEcrite\",\n" +
+          "      \"consigne\": \"[consigne en allemand]\",\n" +
+          "      \"correctionCriteres\": [\"compréhension\", \"vocabulaire\", \"grammaire\"]\n" +
+          "    },\n" +
+          "    {\n" +
+          "      \"type\": \"oral\",\n" +
+          "      \"critere\": \"expressionOrale\",\n" +
+          "      \"consigne\": \"[consigne en allemand]\",\n" +
+          "      \"correctionCriteres\": [\"prononciation\", \"grammaire\", \"vocabulaire\"]\n" +
+          "    }\n" +
+          "  ]\n" +
+          "}\n\n" +
+          "IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.";
+
+        const response = await fetch('/api/mistral', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt,
+            responseFormat: 'json_object',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Erreur lors de la génération du test de niveau');
+        }
+
+        const data = await response.json();
+        
+        // Valider la réponse
+        if (!data.questions || !Array.isArray(data.questions) || data.questions.length < 1) {
+          throw new Error(`Réponse Mistral invalide : attendu 8 questions, reçu ${data.questions?.length || 0}`);
+        }
+
+        // Valider et parser les questions
+        const validQuestions: GlobalTestQuestion[] = data.questions.map((q: any, index: number) => {
+          if (q.type === 'qcm') {
+            if (!q.question || !q.choix || !Array.isArray(q.choix) || q.choix.length !== 4 || 
+                q.bonneReponse === undefined || !q.critere) {
+              throw new Error(`Question QCM ${index + 1} invalide`);
+            }
+            return {
+              type: 'qcm',
+              critere: q.critere,
+              question: String(q.question),
+              choix: q.choix.map((c: any) => String(c)),
+              bonneReponse: Number(q.bonneReponse),
+              explication: String(q.explication || ''),
+            };
+          } else if (q.type === 'production') {
+            if (!q.consigne || !q.critere) {
+              throw new Error(`Question production ${index + 1} invalide`);
+            }
+            return {
+              type: 'production',
+              critere: q.critere,
+              consigne: String(q.consigne),
+              correctionCriteres: Array.isArray(q.correctionCriteres) 
+                ? q.correctionCriteres.map(String) 
+                : ['grammaire', 'vocabulaire'],
+            };
+          } else if (q.type === 'oral') {
+            if (!q.consigne || !q.critere) {
+              throw new Error(`Question orale ${index + 1} invalide`);
+            }
+            return {
+              type: 'oral',
+              critere: q.critere,
+              consigne: String(q.consigne),
+              correctionCriteres: Array.isArray(q.correctionCriteres) 
+                ? q.correctionCriteres.map(String) 
+                : ['prononciation', 'vocabulaire', 'fluidite'],
+            };
+          } else {
+            throw new Error(`Type de question invalide: ${q.type}`);
+          }
+        });
+
+        setGlobalTestQuestions(validQuestions);
+        setGlobalTestState('inProgress');
+        setCurrentQuestionIndex(0);
+        setGlobalTestAnswers({});
+        setGlobalTestScores({});
+        setGlobalTestCorrections({});
+        setIsLoading(false);
+
+        return; // Sortir après avoir traité le mode niveau
+      }
+
+      // Mode basé sur les cours
+      const lecons = getAllLecons();
       
       if (lecons.length === 0) {
         throw new Error('Aucune leçon disponible. Importez d\'abord un PDF via /lecons/import');
@@ -1407,7 +1547,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       const data = await response.json();
       
       // Valider la réponse
-      if (!data.questions || !Array.isArray(data.questions) || data.questions.length !== 10) {
+      if (!data.questions || !Array.isArray(data.questions) || data.questions.length < 1) {
         throw new Error(`Réponse Mistral invalide : attendu 10 questions, reçu ${data.questions?.length || 0}`);
       }
 
@@ -1469,7 +1609,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       setGlobalTestState('start');
       setIsLoading(false);
     }
-  }, [evaluations]);
+  }, [evaluations, modeEvaluation, niveauCECRL]);
 
   /**
    * Corrige une réponse QCM du test global
@@ -1770,9 +1910,42 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
             portee: 'global',
             sequenceCible: 'Test global complet',
             scoreGlobal: score,
+            modeEvaluation,
           });
         }
       });
+
+      // Si mode niveau, calculer et sauvegarder le niveau officiel
+      if (modeEvaluation === 'niveau') {
+        // Préparer les scores pour estimerNiveauCECRL
+        const scoresPourNiveau: Record<CritereEvaluation, number> = {
+          comprehensionOrale: scoresParCritere.comprehensionOrale || 0,
+          comprehensionEcrite: scoresParCritere.comprehensionEcrite || 0,
+          expressionOrale: scoresParCritere.expressionOrale || 0,
+          expressionEcrite: scoresParCritere.expressionEcrite || 0,
+        };
+        
+        // Appeler Mistral pour obtenir une justification
+        const justificationResponse = await fetch('/api/mistral', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt: `Analyse les scores suivants pour un test de niveau CECRL en allemand et fournit une justification détaillée du niveau atteint ainsi que des conseils pour progresser. Scores: Compréhension Écrite: ${scoresParCritere.comprehensionEcrite || 0}/100, Compréhension Orale: ${scoresParCritere.comprehensionOrale || 0}/100, Expression Écrite: ${scoresParCritere.expressionEcrite || 0}/100, Expression Orale: ${scoresParCritere.expressionOrale || 0}/100. Score global: ${scoreGlobal}/100. Réponds en français avec un objet JSON: {"justification": "...", "conseils": ["...", "..."]}`,
+            responseFormat: 'json_object',
+          }),
+        });
+
+        let justificationOfficielle = 'Niveau calculé basé sur les scores du test.';
+        if (justificationResponse.ok) {
+          const justificationData = await justificationResponse.json();
+          justificationOfficielle = justificationData.justification || justificationOfficielle;
+        }
+
+        // Mettre à jour le niveau officiel
+        estimerNiveauCECRL(scoresPourNiveau, justificationOfficielle);
+      }
 
       // Déterminer points forts et axes d'amélioration
       const pointsForts: string[] = [];
@@ -1802,7 +1975,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
       setError(`Impossible de calculer les résultats : ${errorMessage}`);
       setIsLoading(false);
     }
-  }, [globalTestQuestions, globalTestAnswers, globalTestScores, globalTestCorrections]);
+  }, [globalTestQuestions, globalTestAnswers, globalTestScores, globalTestCorrections, modeEvaluation]);
 
   /**
    * Démarre l'enregistrement pour une question orale du test global
@@ -1939,6 +2112,48 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte supplémentaire.`;
           ))}
         </div>
       </div>
+
+      {/* ======================================================================
+           SÉLECTEUR DE MODE D'ÉVALUATION (pour tous les onglets)
+         ====================================================================== */}
+      {step === 'setup' && (
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-6 mb-6">
+          <h2 className="text-lg font-semibold font-serif text-[#1e1b4b]">
+            Choisissez le mode d'évaluation
+          </h2>
+
+          <div className="flex gap-4 mb-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="modeEvaluation"
+                value="cours"
+                checked={modeEvaluation === 'cours'}
+                onChange={(e) => setModeEvaluation(e.target.value as ModeEvaluation)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-gray-700">📚 Mode A — Basé sur mes cours</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="modeEvaluation"
+                value="niveau"
+                checked={modeEvaluation === 'niveau'}
+                onChange={(e) => setModeEvaluation(e.target.value as ModeEvaluation)}
+                className="h-4 w-4 text-yellow-600 focus:ring-yellow-500"
+              />
+              <span className="text-gray-700">🎯 Mode B — Évaluation de niveau</span>
+            </label>
+          </div>
+
+          {modeEvaluation === 'niveau' && activeTab === 'testGlobal' && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-sm">
+              <strong>🎯 Évaluation officielle</strong> - Les résultats de ce test seront utilisés pour calculer votre niveau CECRL officiel.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ======================================================================
            SÉLECTEUR DE THÈME (pour tous les onglets sauf Test Global)
