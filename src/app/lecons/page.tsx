@@ -9,6 +9,7 @@ import {
   getManuels,
   deleteLecon,
   updateLecon,
+  addFlashcard,
   type Lecon,
   type ExerciceType,
   type FicheRevision,
@@ -326,6 +327,87 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
     }
   }, []);
 
+  /**
+   * Génère des flashcards à partir du contenu d'une leçon via Mistral
+   */
+  const generateAndSaveFlashcards = useCallback(async (lecon: LeconWithRef) => {
+    if (!lecon?.contenuTexte) return [];
+
+    try {
+      const prompt = `Extrait tous les mots de vocabulaire importants de ce contenu de leçon allemande.
+Pour chaque mot, donne :
+- motAllemand : le mot en allemand
+- article : der/die/das si c'est un nom (sinon null)
+- traductionFrancais : traduction en français
+- exemple : courte phrase exemple en allemand
+- traductionExemple : traduction de la phrase
+
+Réponds UNIQUEMENT en JSON :
+{
+  'flashcards': [
+    {
+      'motAllemand': 'die Küche',
+      'article': 'die',
+      'traductionFrancais': 'la cuisine',
+      'exemple': 'Die Küche ist sehr groß.',
+      'traductionExemple': 'La cuisine est très grande.'
+    }
+  ]
+}
+
+Contenu de la leçon : ${lecon.contenuTexte.substring(0, 2000)}`;
+
+      const response = await fetch('/api/mistral', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          responseFormat: 'json_object',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la génération des flashcards');
+      }
+
+      const data = await response.json();
+      
+      // Validation de la réponse
+      if (!data.flashcards || !Array.isArray(data.flashcards)) {
+        console.warn('Aucune flashcard générée pour cette leçon');
+        return [];
+      }
+
+      // Sauvegarder chaque flashcard
+      const savedFlashcards = [];
+      for (const fc of data.flashcards) {
+        if (fc.motAllemand && fc.traductionFrancais) {
+          const saved = addFlashcard({
+            motAllemand: String(fc.motAllemand),
+            article: fc.article || undefined,
+            traductionFrancais: String(fc.traductionFrancais),
+            exemple: fc.exemple ? String(fc.exemple) : undefined,
+            traductionExemple: fc.traductionExemple ? String(fc.traductionExemple) : undefined,
+            leconId: lecon.id,
+            leconTitre: lecon.titre,
+            niveau: 0,
+          });
+          savedFlashcards.push(saved);
+        }
+      }
+
+      return savedFlashcards;
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue';
+      console.error(`Impossible de générer les flashcards : ${errorMessage}`);
+      return [];
+    }
+  }, []);
+
   // Nombre de leçons sélectionnées
   const selectedCount = selectedLecons.size;
   const hasSelection = selectedCount > 0;
@@ -592,10 +674,12 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                               <button
                                 onClick={async () => {
                                   const newFiche = await generateAndSaveFicheRevision(lecon);
+                                  const newFlashcards = await generateAndSaveFlashcards(lecon);
                                   if (newFiche) {
                                     updateLecon(lecon.manuelId, lecon.chapitreId, lecon.id, { ficheRevision: newFiche });
                                     refreshLecons();
                                     handleSelectLecon({ ...lecon, ficheRevision: newFiche });
+                                    showToast(`✅ Fiche générée + ${newFlashcards.length} flashcards créées`, 'success');
                                   }
                                 }}
                                 disabled={isGeneratingFiche}
@@ -607,7 +691,7 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                                     Génération en cours...
                                   </span>
                                 ) : (
-                                  'Générer la fiche de révision'
+                                  'Générer la fiche + flashcards'
                                 )}
                               </button>
                             )}
@@ -615,14 +699,16 @@ Le vocabulaire doit être pertinent et utile pour l'apprentissage.`;
                               <button
                                 onClick={async () => {
                                   const newFiche = await generateAndSaveFicheRevision(lecon);
+                                  const newFlashcards = await generateAndSaveFlashcards(lecon);
                                   if (newFiche) {
                                     updateLecon(lecon.manuelId, lecon.chapitreId, lecon.id, { ficheRevision: newFiche });
                                     refreshLecons();
+                                    showToast(`✅ Fiche régénérée + ${newFlashcards.length} flashcards`, 'success');
                                   }
                                 }}
                                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 font-medium text-sm"
                               >
-                                Régénérer
+                                🔄 Régénérer + flashcards
                               </button>
                             )}
                           </div>

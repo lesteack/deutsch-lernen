@@ -12,6 +12,28 @@
 // TYPES / INTERFACES
 // ============================================================================
 
+/** Type pour le résultat d'une révision */
+export type ResultatRevision = 'facile' | 'bien' | 'difficile' | 'raté';
+
+/** Type pour une flashcard avec algorithme de répétition espacée */
+export interface Flashcard {
+  id: string;
+  motAllemand: string;
+  article?: string;          // der/die/das si c'est un nom
+  traductionFrancais: string;
+  exemple?: string;          // phrase exemple en allemand
+  traductionExemple?: string;
+  leconId: string;
+  leconTitre: string;
+  // Algorithme répétition espacée (SM-2 simplifié)
+  niveau: 0 | 1 | 2 | 3 | 4 | 5;  // 0=nouveau, 5=maîtrisé
+  prochaineRevision: string;        // date ISO
+  intervalleJours: number;          // intervalle actuel
+  facilite: number;                 // facteur de facilité (1.3-2.5)
+  nombreRevisions: number;
+  dernierResultat?: ResultatRevision;
+}
+
 /** Type pour la fiche de révision */
 export interface FicheRevision {
   titre: string;
@@ -174,6 +196,7 @@ const STORAGE_KEYS = {
   TEXTES_SUPPORT: 'textesSupport',
   PROGRESSION: 'progression',
   PROGRAMME: 'programme',
+  FLASHCARDS: 'flashcards',
 } as const;
 
 // ============================================================================
@@ -1096,6 +1119,158 @@ export function updateBlocStatut(id: string, statut: BlocStatut): ProgrammeBloc[
   return programmeB1C1.map(bloc => 
     bloc.id === id ? { ...bloc, statut } : bloc
   );
+}
+
+// ============================================================================
+// FLASHCARDS
+// ============================================================================
+
+/** Intervalles de base par niveau pour SM-2 simplifié */
+const intervallesBase: Record<number, number> = {
+  0: 1,
+  1: 2,
+  2: 4,
+  3: 7,
+  4: 14,
+  5: 30,
+};
+
+/**
+ * Calcule la prochaine révision selon l'algorithme SM-2 simplifié
+ * @param flashcard - La flashcard à mettre à jour
+ * @param resultat - Résultat de la révision : 'facile', 'bien', 'difficile', 'raté'
+ * @returns Nouvelle flashcard avec mise à jour des champs SM-2
+ */
+export function calculerProchaineRevision(flashcard: Flashcard, resultat: ResultatRevision): Flashcard {
+  const aujourdHui = new Date();
+  const dateAujourdHui = formatDate(aujourdHui);
+  
+  let nouveauNiveau = flashcard.niveau;
+  let nouvelIntervalle = flashcard.intervalleJours;
+  let nouvelleFacilite = flashcard.facilite;
+  
+  switch (resultat) {
+    case 'raté':
+      nouveauNiveau = 0;
+      nouvelIntervalle = intervallesBase[0];
+      nouvelleFacilite = Math.max(1.3, nouvelleFacilite - 0.2);
+      break;
+    case 'difficile':
+      nouveauNiveau = Math.max(0, nouveauNiveau - 1) as 0 | 1 | 2 | 3 | 4 | 5;
+      nouvelIntervalle = intervallesBase[Math.max(0, nouveauNiveau)];
+      nouvelleFacilite = Math.max(1.3, nouvelleFacilite - 0.15);
+      break;
+    case 'bien':
+      nouveauNiveau = Math.min(5, nouveauNiveau + 1) as 0 | 1 | 2 | 3 | 4 | 5;
+      nouvelIntervalle = Math.round(nouvelIntervalle * nouvelleFacilite);
+      // nouvelleFacilite reste inchangée
+      break;
+    case 'facile':
+      nouveauNiveau = Math.min(5, nouveauNiveau + 1) as 0 | 1 | 2 | 3 | 4 | 5;
+      nouvelIntervalle = Math.round(nouvelIntervalle * nouvelleFacilite * 1.3);
+      nouvelleFacilite = Math.min(2.5, nouvelleFacilite + 0.1);
+      break;
+  }
+  
+  // Calculer la date de la prochaine révision
+  const prochaineRevisionDate = new Date(aujourdHui);
+  prochaineRevisionDate.setDate(aujourdHui.getDate() + nouvelIntervalle);
+  const prochaineRevision = formatDate(prochaineRevisionDate);
+  
+  return {
+    ...flashcard,
+    niveau: nouveauNiveau,
+    prochaineRevision,
+    intervalleJours: nouvelIntervalle,
+    facilite: Math.round(nouvelleFacilite * 100) / 100, // Arrondir à 2 décimales
+    nombreRevisions: flashcard.nombreRevisions + 1,
+    dernierResultat: resultat,
+  };
+}
+
+/** Récupère toutes les flashcards */
+export function getFlashcards(): Flashcard[] {
+  return getStorageItem<Flashcard[]>(STORAGE_KEYS.FLASHCARDS) || [];
+}
+
+/** Stocke toutes les flashcards */
+export function setFlashcards(flashcards: Flashcard[]): void {
+  setStorageItem(STORAGE_KEYS.FLASHCARDS, flashcards);
+}
+
+/** Ajoute une flashcard */
+export function addFlashcard(flashcard: Omit<Flashcard, 'id' | 'prochaineRevision' | 'intervalleJours' | 'facilite' | 'nombreRevisions'>): Flashcard {
+  const flashcards = getFlashcards();
+  const aujourdHui = formatDate(new Date());
+  
+  const newFlashcard: Flashcard = {
+    ...flashcard,
+    id: generateId(),
+    prochaineRevision: aujourdHui,
+    intervalleJours: intervallesBase[0], // 1 jour pour une nouvelle carte
+    facilite: 2.5, // facilité initiale
+    nombreRevisions: 0,
+  };
+  
+  flashcards.push(newFlashcard);
+  setFlashcards(flashcards);
+  return newFlashcard;
+}
+
+/** Met à jour une flashcard */
+export function updateFlashcard(id: string, updates: Partial<Flashcard>): Flashcard | null {
+  const flashcards = getFlashcards();
+  const index = flashcards.findIndex(f => f.id === id);
+  
+  if (index === -1) return null;
+  
+  const updated = { ...flashcards[index], ...updates };
+  flashcards[index] = updated;
+  setFlashcards(flashcards);
+  return updated;
+}
+
+/** Supprime une flashcard par ID */
+export function deleteFlashcard(id: string): boolean {
+  const flashcards = getFlashcards();
+  const newFlashcards = flashcards.filter(f => f.id !== id);
+  
+  if (newFlashcards.length === flashcards.length) {
+    return false;
+  }
+  
+  setFlashcards(newFlashcards);
+  return true;
+}
+
+/** Récupère une flashcard par ID */
+export function getFlashcardById(id: string): Flashcard | null {
+  return getFlashcards().find(f => f.id === id) || null;
+}
+
+/** Récupère les flashcards à réviser aujourd'hui */
+export function getFlashcardsARevoir(): Flashcard[] {
+  const flashcards = getFlashcards();
+  const aujourdHui = formatDate(new Date());
+  
+  return flashcards.filter(f => f.prochaineRevision <= aujourdHui);
+}
+
+/** Récupère les flashcards par leçon */
+export function getFlashcardsByLecon(leconId: string): Flashcard[] {
+  return getFlashcards().filter(f => f.leconId === leconId);
+}
+
+/** Récupère le nombre de flashcards à réviser aujourd'hui */
+export function getFlashcardsARevoirCount(): number {
+  return getFlashcardsARevoir().length;
+}
+
+/** Initialise les flashcards dans le storage si n'existent pas */
+export function initFlashcards(): void {
+  if (getStorageItem<Flashcard[]>(STORAGE_KEYS.FLASHCARDS) === null) {
+    setStorageItem(STORAGE_KEYS.FLASHCARDS, []);
+  }
 }
 
 // ============================================================================

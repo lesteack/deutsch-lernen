@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getFlashcardsARevoirCount } from '@/lib/storage';
 
 /**
  * Barre de navigation principale du site
@@ -11,6 +12,12 @@ import { useState } from 'react';
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [flashcardsToReviewCount, setFlashcardsToReviewCount] = useState<number>(0);
+
+  // Charger le nombre de flashcards à réviser
+  useEffect(() => {
+    setFlashcardsToReviewCount(getFlashcardsARevoirCount());
+  }, []);
 
   // Déterminer si un lien est actif
   const isActive = (path: string) => {
@@ -53,6 +60,16 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-2">
             <NavLink href="/">Dashboard</NavLink>
             <NavLink href="/lecons">Leçons</NavLink>
+            <NavLink href="/flashcards">
+              <span className="flex items-center gap-1">
+                🃏 Flashcards
+                {flashcardsToReviewCount > 0 && (
+                  <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {flashcardsToReviewCount}
+                  </span>
+                )}
+              </span>
+            </NavLink>
             <NavLink href="/programme">Programme</NavLink>
             <NavLink href="/exercices">Exercices</NavLink>
             <NavLink href="/evaluation">Évaluation</NavLink>
@@ -61,7 +78,7 @@ export default function Navbar() {
 
           {/* Bouton mobile */}
           <div className="md:hidden">
-            <MobileMenu />
+            <MobileMenu flashcardsToReviewCount={flashcardsToReviewCount} />
           </div>
         </div>
       </div>
@@ -73,7 +90,7 @@ export default function Navbar() {
 // MENU MOBILE
 // ============================================================================
 
-function MobileMenu() {
+function MobileMenu({ flashcardsToReviewCount }: { flashcardsToReviewCount: number }) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -110,6 +127,16 @@ function MobileMenu() {
           </MobileNavLink>
           <MobileNavLink href="/lecons" pathname={pathname} onClick={() => setIsOpen(false)}>
             Leçons
+          </MobileNavLink>
+          <MobileNavLink href="/flashcards" pathname={pathname} onClick={() => setIsOpen(false)}>
+            <span className="flex items-center gap-1">
+              🃏 Flashcards
+              {flashcardsToReviewCount > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center ml-1">
+                  {flashcardsToReviewCount}
+                </span>
+              )}
+            </span>
           </MobileNavLink>
           <MobileNavLink href="/programme" pathname={pathname} onClick={() => setIsOpen(false)}>
             Programme

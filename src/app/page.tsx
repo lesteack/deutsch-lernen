@@ -8,6 +8,7 @@ import {
   getAllLecons,
   getEvaluations,
   getProgramme,
+  getFlashcardsARevoirCount,
   determineBlocEnCours,
   calculerProgressionGlobale,
   type SuiviProgression,
@@ -76,6 +77,7 @@ export default function DashboardPage() {
     expressionEcrite: 0,
   });
   const [badgesDebloques, setBadgesDebloques] = useState<Badge[]>([]);
+  const [flashcardsToReviewCount, setFlashcardsToReviewCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showOfficialEvaluationPrompt, setShowOfficialEvaluationPrompt] = useState(false);
 
@@ -110,6 +112,7 @@ export default function DashboardPage() {
       setProgramme(programmeData);
       setScores(calcScores);
       setBadgesDebloques(unlockedBadges);
+      setFlashcardsToReviewCount(getFlashcardsARevoirCount());
       sauvegarderBadgesDebloques(prog);
       
       // Calculer la progression dans le programme
@@ -249,6 +252,51 @@ export default function DashboardPage() {
             <p className="text-xs text-gray-500 italic">
               Estimé via Mistral
             </p>
+          </div>
+        </div>
+
+        {/* Flashcards du jour */}
+        <div className="bg-white rounded-xl shadow-md p-6 relative overflow-hidden card-hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br opacity-10 from-purple-100 to-pink-100"></div>
+          <div className="relative">
+            <h2 className="text-sm font-medium text-gray-500 mb-2">
+              🃏 Flashcards du jour
+            </h2>
+            {flashcardsToReviewCount > 0 ? (
+              <>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-3xl">🃏</span>
+                  <span className="text-3xl font-bold text-purple-600">
+                    {flashcardsToReviewCount}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mb-3">
+                  carte(s) à réviser aujourd'hui
+                </p>
+                <Link
+                  href="/flashcards"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors duration-200 text-sm font-medium"
+                >
+                  ✨ Réviser maintenant
+                </Link>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-3xl">🃏</span>
+                  <span className="text-3xl font-bold text-green-600">0</span>
+                </div>
+                <p className="text-sm text-gray-600 mb-3">
+                  Aucune carte à réviser
+                </p>
+                <Link
+                  href="/flashcards"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors duration-200 text-sm font-medium"
+                >
+                  📚 Voir toutes les cartes
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
